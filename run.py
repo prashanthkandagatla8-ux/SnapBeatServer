@@ -55,7 +55,7 @@ def main() -> int:
     # A second launch should surface the existing window, not fail on a busy port.
     if already_running(PREFERRED_PORT):
         if OPEN_BROWSER:
-            webbrowser.open(f"http://{HOST}:{PREFERRED_PORT}/")
+            webbrowser.open(f"http://127.0.0.1:{PREFERRED_PORT}/")
         return 0
 
     # When a port was handed to us, use exactly that one: the shell is already waiting on

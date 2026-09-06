@@ -43,7 +43,7 @@ app = FastAPI(title="BeatCanvas", docs_url=None, redoc_url=None, lifespan=lifesp
 from fastapi.middleware.cors import CORSMiddleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://127.0.0.1:8772", "http://localhost:8772", "*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -443,6 +443,10 @@ def clear_drops():
 
 @app.post("/api/browse")
 def browse(kind: str = Form("folder"), start: str = Form("")):
+    client_ip = request.client.host if request and request.client else ""
+    if client_ip not in ("127.0.0.1", "::1", "localhost"):
+        raise HTTPException(status_code=403, detail="Endpoint restricted to localhost")
+
     """Show the operating system's own file or folder picker.
 
     Only worth having because this runs on your machine: a page served from the internet
@@ -469,6 +473,10 @@ def browse(kind: str = Form("folder"), start: str = Form("")):
 
 @app.post("/api/open-folder")
 def open_folder(path: str = Form("")):
+    client_ip = request.client.host if request and request.client else ""
+    if client_ip not in ("127.0.0.1", "::1", "localhost"):
+        raise HTTPException(status_code=403, detail="Endpoint restricted to localhost")
+
     """Open a folder in Explorer so finished videos can be played.
 
     Guarded to folders belonging to this project or ones the app was told to write to,
@@ -492,6 +500,10 @@ def open_folder(path: str = Form("")):
 
 @app.post("/api/reveal")
 def reveal(path: str = Form(...)):
+    client_ip = request.client.host if request and request.client else ""
+    if client_ip not in ("127.0.0.1", "::1", "localhost"):
+        raise HTTPException(status_code=403, detail="Endpoint restricted to localhost")
+
     """Open the containing folder with the file selected.
 
     A local convenience, so the operator does not have to go hunting for the output.
@@ -534,15 +546,18 @@ import asyncio
 from fastapi.responses import FileResponse
 from typing import List
 
+def sanitize_filename(name: str) -> str:
+    clean = "".join(c if (c.isalnum() or c in "-_. ") else "_" for c in name).strip()
+    return clean or "unnamed_file"
+
 @app.post("/api/render/mobile")
-async def render_mobile(
+def render_mobile(
     audio: UploadFile = File(...),
     photos: List[UploadFile] = File(...)
 ):
     import shutil
     import uuid
 
-    # Create a unique job workspace
     job_id_str = str(uuid.uuid4())
     inbox = config.ROOT / "_dropped" / job_id_str
     photos_dir = inbox / "photos"
@@ -550,15 +565,15 @@ async def render_mobile(
     photos_dir.mkdir(parents=True, exist_ok=True)
     music_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save audio
-    audio_path = music_dir / audio.filename
+    audio_clean = sanitize_filename(audio.filename or "audio.ext")
+    audio_path = music_dir / audio_clean
     with open(audio_path, "wb") as f:
         shutil.copyfileobj(audio.file, f)
 
-    # Save photos
     photo_paths = []
     for p in photos:
-        p_path = photos_dir / p.filename
+        p_clean = sanitize_filename(p.filename or "photo.ext")
+        p_path = photos_dir / p_clean
         with open(p_path, "wb") as f:
             shutil.copyfileobj(p.file, f)
         photo_paths.append(str(p_path.resolve()))
@@ -568,14 +583,13 @@ async def render_mobile(
         "photo_order": photo_paths,
         "music_path": str(audio_path.resolve()),
         "fill": "repeat",
-        "reading": "auto",
+        "analysis": "auto",
         "look": "mix",
-        "frame": "9:16",
-        "pace": "accurate",
-        "intensity": "accurate",
+        "frame": "portrait",
+        "pace": "medium",
+        "intensity": 1.0,
         "cover_mode": "zoom",
         "reveal_shape": "circle",
-        
     }
 
     job = job_store.create(f"mobile_{job_id_str[:8]}", AUTO_TEMPLATE, options)

@@ -74,25 +74,40 @@ class Worker:
 
     def _loop(self) -> None:
         while not self._stop.is_set():
-            job = self.store.next_queued()
-            if job is None:
+            try:
                 self._wake.wait(timeout=2.0)
                 self._wake.clear()
-                continue
-            self.current_job_id = job.id
-            try:
-                self._run(job)
-            except (ValueError, FileNotFoundError) as exc:
-                # The input is wrong, not the code. Show the message on its own; a
-                # traceback here only buries it.
-                self.store.update(job.id, status=store.STATUS_FAILED,
-                                  stage="failed", error=str(exc))
+                with self._active_lock:
+                    can_start = self._active_count < 4
+                while can_start:
+                    job = self.store.next_queued()
+                    if not job:
+                        break
+                    with self._active_lock:
+                        self._active_count += 1
+                        can_start = self._active_count < 4
+                    self._executor.submit(self._process_job, job)
             except Exception:
-                self.store.update(job.id, status=store.STATUS_FAILED,
-                                  stage="failed",
-                                  error=traceback.format_exc(limit=8))
-            finally:
-                self.current_job_id = None
+                traceback.print_exc()
+                time.sleep(2)
+                continue
+
+    def _process_job(self, job: store.Job) -> None:
+        try:
+            self._run(job)
+        except Exception as exc:
+            err = traceback.format_exc(limit=8)
+            print(f"Job {job.id} failed:
+{err}")
+            self.store.update(job.id, status=store.STATUS_FAILED, stage="failed", error=err)
+        finally:
+            import shutil
+            dropped_folder = Path(job.options.get("photo_folder", "")).parent
+            if dropped_folder.exists() and "_dropped" in str(dropped_folder):
+                shutil.rmtree(dropped_folder, ignore_errors=True)
+            with self._active_lock:
+                self._active_count -= 1
+            self.notify()
 
     # -- preparing a job -------------------------------------------------
 

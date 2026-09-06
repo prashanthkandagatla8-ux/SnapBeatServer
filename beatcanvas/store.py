@@ -93,17 +93,25 @@ class JobStore:
         self._recover()
 
     def _recover(self) -> None:
-        """Requeue anything left mid-flight by an unclean shutdown.
-
-        Renders are quick here, so restarting one costs seconds. Requeuing is friendlier
-        than marking it failed and making the user set it up again.
-        """
         with self._lock:
-            self._conn.execute(
-                "UPDATE jobs SET status = ?, stage = 'requeued after restart' "
-                "WHERE status IN (?, ?)",
-                (STATUS_QUEUED, STATUS_PREVIEWING, STATUS_RENDERING),
-            )
+            rows = self._conn.execute(
+                "SELECT id, options FROM jobs WHERE status IN (?, ?, ?)",
+                (STATUS_QUEUED, STATUS_PREVIEWING, STATUS_RENDERING)
+            ).fetchall()
+            for row in rows:
+                opts = json.loads(row["options"] or "{}")
+                retries = opts.get("_retries", 0)
+                if retries >= 3:
+                    self._conn.execute(
+                        "UPDATE jobs SET status = ?, stage = 'failed after 3 retries' WHERE id = ?",
+                        (STATUS_FAILED, row["id"])
+                    )
+                else:
+                    opts["_retries"] = retries + 1
+                    self._conn.execute(
+                        "UPDATE jobs SET status = ?, stage = 'requeued after restart', options = ? WHERE id = ?",
+                        (STATUS_QUEUED, json.dumps(opts), row["id"])
+                    )
             self._conn.commit()
 
     def close(self) -> None:
