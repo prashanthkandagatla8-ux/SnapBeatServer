@@ -553,7 +553,8 @@ def sanitize_filename(name: str) -> str:
 @app.post("/api/render/mobile")
 def render_mobile(
     audio: UploadFile = File(...),
-    photos: List[UploadFile] = File(...)
+    photos: List[UploadFile] = File(...),
+    template: str = Form(None)
 ):
     import shutil
     import uuid
@@ -592,7 +593,8 @@ def render_mobile(
         "reveal_shape": "circle",
     }
 
-    job = job_store.create(f"mobile_{job_id_str[:8]}", AUTO_TEMPLATE, options)
+    chosen_template = f"templates/{template}.json" if template else AUTO_TEMPLATE
+    job = job_store.create(f"mobile_{job_id_str[:8]}", chosen_template, options)
     worker.notify()
     return {"job_id": job.id}
 
