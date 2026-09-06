@@ -97,8 +97,7 @@ class Worker:
             self._run(job)
         except Exception as exc:
             err = traceback.format_exc(limit=8)
-            print(f"Job {job.id} failed:
-{err}")
+            print(f"Job {job.id} failed:\n{err}")
             self.store.update(job.id, status=store.STATUS_FAILED, stage="failed", error=err)
         finally:
             import shutil
@@ -390,3 +389,4 @@ class Worker:
                 "warnings": result.warnings,
             },
         )
+
