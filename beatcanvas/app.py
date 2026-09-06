@@ -593,7 +593,7 @@ def render_mobile(
         "reveal_shape": "circle",
     }
 
-    chosen_template = f"templates/{template}.json" if template else AUTO_TEMPLATE
+    chosen_template = f"templates/{template}.json" if template else "templates/simple.json"
     job = job_store.create(f"mobile_{job_id_str[:8]}", chosen_template, options)
     worker.notify()
     return {"job_id": job.id}
