@@ -16,6 +16,8 @@ from concurrent.futures import ThreadPoolExecutor
 import traceback
 from pathlib import Path
 
+import numpy as np
+
 from . import (analysis, animations, beats, choreography, config, effects, explain,
                photos as photo_mod, renderer, rhythm, store)
 from .template import FILL_MODES, MIN_PHOTOS, REVEAL_SHAPES, Template
@@ -80,7 +82,8 @@ class Worker:
                 with self._active_lock:
                     can_start = self._active_count < 4
                 while can_start:
-                    job = self.store.next_queued()
+                    # Fix: Use atomic claim that marks job as rendering immediately
+                    job = self.store.claim_next_queued()
                     if not job:
                         break
                     with self._active_lock:
@@ -102,8 +105,15 @@ class Worker:
         finally:
             import shutil
             dropped_folder = Path(job.options.get("photo_folder", "")).parent
-            if dropped_folder.exists() and "_dropped" in str(dropped_folder):
-                shutil.rmtree(dropped_folder, ignore_errors=True)
+            # Fix: Only delete folders strictly inside ROOT/_dropped — no substring match
+            safe_root = config.ROOT / "_dropped"
+            try:
+                if dropped_folder.exists() and dropped_folder.resolve().is_relative_to(safe_root.resolve()):
+                    shutil.rmtree(dropped_folder, ignore_errors=True)
+            except (ValueError, OSError):
+                pass  # is_relative_to can raise on some edge cases
+            # Fix: Clean up _last_progress_commit to prevent memory leak
+            self._last_progress_commit.pop(job.id, None)
             with self._active_lock:
                 self._active_count -= 1
             self.notify()
@@ -152,6 +162,9 @@ class Worker:
 
         if not auto and template.music_mode == "any":
             template = self._build_timing(job, template, options, len(pictures))
+            # "Drop It" effect: inject burst montage at detected bass drops
+            if options.get("drop_it"):
+                template = self._apply_drop_it(template, options, len(pictures))
         elif not auto and not Path(template.audio_path).exists():
             raise FileNotFoundError(
                 f"this template's music is missing: {template.audio_path}")
@@ -267,6 +280,153 @@ class Worker:
                 # A failure to explain must never stop a render.
                 built.notes.append(f"could not write the analysis: {type(exc).__name__}")
         return built
+
+    # -- Drop It ---------------------------------------------------------
+
+    def _apply_drop_it(self, template: Template, options: dict,
+                       photo_count: int) -> Template:
+        """Detect bass drops and inject burst montage clips at those moments.
+
+        A bass drop is found by analysing low-frequency energy (< 150 Hz) in the
+        audio. When a sudden spike exceeds 3× the running average, it is tagged as
+        a drop. At each drop, the existing clip is replaced by a rapid-fire burst
+        of 5 micro-clips (0.06s each) cycling through different photos, followed by
+        a "slam" clip with Punch Cut animation at high intensity.
+        """
+        import librosa
+
+        music = Path(options.get("music_path", ""))
+        if not music.exists() or not template.clips:
+            return template
+
+        # Load audio and compute a low-frequency onset envelope for bass detection
+        try:
+            y, sr = librosa.load(str(music), sr=22050, mono=True,
+                                 duration=template.duration + 2.0)
+            # Isolate bass frequencies (< 150 Hz) using a short-time FFT
+            stft = np.abs(librosa.stft(y, n_fft=2048, hop_length=512))
+            freqs = librosa.fft_frequencies(sr=sr, n_fft=2048)
+            bass_mask = freqs < 150.0
+            bass_energy = stft[bass_mask, :].sum(axis=0)
+
+            # Smooth with a running average, then find spikes > 3× the average
+            window = max(1, int(sr / 512 * 0.5))  # ~0.5 second window
+            if len(bass_energy) < window * 2:
+                return template
+
+            avg = np.convolve(bass_energy, np.ones(window) / window, mode='same')
+            avg = np.maximum(avg, 1e-6)  # avoid division by zero
+            ratio = bass_energy / avg
+
+            hop_duration = 512 / sr
+            drop_times = []
+            min_gap = 2.0  # at least 2 seconds between drops
+            for i in range(window, len(ratio)):
+                t = i * hop_duration
+                if ratio[i] > 3.0 and bass_energy[i] > np.percentile(bass_energy, 85):
+                    if not drop_times or (t - drop_times[-1]) > min_gap:
+                        drop_times.append(t)
+
+            if not drop_times:
+                template.notes = list(template.notes) + [
+                    "Drop It: no bass drops detected in this track"]
+                return template
+
+            # Limit to top 4 strongest drops to avoid overdoing it
+            if len(drop_times) > 4:
+                # Keep the ones with highest energy
+                energies = []
+                for dt in drop_times:
+                    idx = int(dt / hop_duration)
+                    idx = min(idx, len(bass_energy) - 1)
+                    energies.append(bass_energy[idx])
+                ranked = sorted(zip(energies, drop_times), reverse=True)[:4]
+                drop_times = sorted(t for _, t in ranked)
+
+        except Exception as exc:
+            template.notes = list(template.notes) + [
+                f"Drop It: audio analysis failed ({type(exc).__name__})"]
+            return template
+
+        # For each drop time, find the clip that contains it and replace with burst
+        from .template import Clip
+        new_clips = []
+        drop_set = set()
+
+        # Find which clip indices contain a drop
+        for dt in drop_times:
+            for i, clip in enumerate(template.clips):
+                if clip.start <= dt < clip.start + clip.duration:
+                    drop_set.add(i)
+                    break
+
+        burst_dur = 0.06   # duration of each burst micro-clip
+        burst_count = 5    # number of rapid photos in the burst
+        slam_anim = "Punch In"  # hard zoom slam after burst
+
+        idx_counter = 0
+        drops_injected = 0
+
+        for i, clip in enumerate(template.clips):
+            if i not in drop_set:
+                clip.index = idx_counter
+                new_clips.append(clip)
+                idx_counter += 1
+                continue
+
+            drops_injected += 1
+            total_burst_time = burst_count * burst_dur  # 0.3s for burst
+            remaining = clip.duration - total_burst_time
+
+            if remaining < 0.1:
+                # Clip too short for burst, just use it as-is with boosted intensity
+                clip.index = idx_counter
+                clip.animation = slam_anim
+                clip.intensity = 2.0
+                new_clips.append(clip)
+                idx_counter += 1
+                continue
+
+            # Inject burst micro-clips: rapid-fire cycling through photos
+            t = clip.start
+            for b in range(burst_count):
+                burst_slot = (clip.slot + b + 1) % max(1, photo_count)
+                micro = Clip(
+                    index=idx_counter,
+                    slot=burst_slot,
+                    start=round(t, 4),
+                    duration=burst_dur,
+                    animation="Cut",
+                    animation_duration=burst_dur,
+                    axis=clip.axis,
+                    intensity=1.5,
+                    cover_mode="zoom",
+                )
+                new_clips.append(micro)
+                idx_counter += 1
+                t += burst_dur
+
+            # Slam clip: the hero photo with punch animation + high intensity
+            slam = Clip(
+                index=idx_counter,
+                slot=clip.slot,
+                start=round(t, 4),
+                duration=round(remaining, 4),
+                animation=slam_anim,
+                animation_duration=min(remaining, 0.4),
+                axis=clip.axis,
+                intensity=2.0,
+                cover_mode="zoom",
+            )
+            new_clips.append(slam)
+            idx_counter += 1
+
+        template.clips = new_clips
+        template.notes = list(template.notes) + [
+            f"Drop It: {drops_injected} bass drop(s) detected, "
+            f"burst montage injected at {', '.join(f'{t:.1f}s' for t in drop_times)}"
+        ]
+        return template
 
     def _build_timing(self, job: store.Job, template: Template, options: dict,
                       photo_count: int) -> Template:

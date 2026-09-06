@@ -554,7 +554,8 @@ def sanitize_filename(name: str) -> str:
 def render_mobile(
     audio: UploadFile = File(...),
     photos: List[UploadFile] = File(...),
-    template: str = Form(None)
+    template: str = Form(None),
+    drop_it: str = Form(None)
 ):
     import shutil
     import uuid
@@ -572,9 +573,10 @@ def render_mobile(
         shutil.copyfileobj(audio.file, f)
 
     photo_paths = []
-    for p in photos:
+    for i, p in enumerate(photos):
         p_clean = sanitize_filename(p.filename or "photo.ext")
-        p_path = photos_dir / p_clean
+        # Fix: Prefix with index to prevent overwrite when filenames collide
+        p_path = photos_dir / f"{i}_{p_clean}"
         with open(p_path, "wb") as f:
             shutil.copyfileobj(p.file, f)
         photo_paths.append(str(p_path.resolve()))
@@ -591,9 +593,14 @@ def render_mobile(
         "intensity": 1.0,
         "cover_mode": "zoom",
         "reveal_shape": "circle",
+        "drop_it": drop_it in ("true", "1", "yes"),
     }
 
-    chosen_template = f"templates/{template}.json" if template else "templates/simple.json"
+    # Fix: Sanitize template name — strip .json suffix, block path traversal
+    if template:
+        template = template.removesuffix(".json")
+        template = Path(template).name  # strip any directory traversal
+    chosen_template = str(config.TEMPLATE_DIR / f"{template}.json") if template else str(config.TEMPLATE_DIR / "simple.json")
     job = job_store.create(f"mobile_{job_id_str[:8]}", chosen_template, options)
     worker.notify()
     return {"job_id": job.id}

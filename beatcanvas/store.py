@@ -178,3 +178,27 @@ class JobStore:
                 "SELECT * FROM jobs WHERE status = ? ORDER BY id ASC LIMIT 1",
                 (STATUS_QUEUED,)).fetchone()
         return self._row(row) if row else None
+
+    def claim_next_queued(self) -> Job | None:
+        """Atomically fetch the next queued job AND mark it as rendering.
+
+        This prevents multiple worker threads from picking up the same job.
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM jobs WHERE status = ? ORDER BY id ASC LIMIT 1",
+                (STATUS_QUEUED,)).fetchone()
+            if not row:
+                return None
+            job_id = row["id"]
+            now = time.time()
+            self._conn.execute(
+                "UPDATE jobs SET status = ?, stage = 'claimed', updated_at = ? WHERE id = ?",
+                (STATUS_RENDERING, now, job_id),
+            )
+            self._conn.commit()
+            # Re-fetch so the returned Job reflects the updated status
+            row = self._conn.execute(
+                "SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        return self._row(row) if row else None
+
