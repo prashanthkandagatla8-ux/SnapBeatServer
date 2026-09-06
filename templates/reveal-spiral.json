@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "name": "Reveal Spiral",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30.0,
+  "music_mode": "any",
+  "animation": "Pulse",
+  "axis": "-y",
+  "cover_mode": "zoom",
+  "beats_per_clip": 1,
+  "reveal_tiles": 1,
+  "reveal_order": "spiral",
+  "reveal_shape": "circle",
+  "min_clip_duration": 0.14,
+  "max_seconds": 30.0,
+  "audio_path": "",
+  "audio_name": "",
+  "audio_start": 0.0,
+  "source_draft": "",
+  "notes": [
+    "Circles open from the middle outwards rather than at random, so each photo grows from its centre in time with the beats."
+  ],
+  "beat_markers": [],
+  "clips": []
+}

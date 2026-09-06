@@ -1,0 +1,1197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BeatCanvas</title>
+<style>
+  :root {
+    --bg:#0f1117; --panel:#171a23; --panel2:#1f2330; --line:#2c3140;
+    --text:#e8ebf2; --muted:#8f97ab; --accent:#5b8cff; --accent2:#7ee0c0;
+    --ok:#6fd39a; --warn:#e8c06a; --bad:#e37f70;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font:15px/1.5 "Segoe UI",system-ui,sans-serif}
+  header{display:flex;align-items:baseline;gap:14px;padding:14px 24px;
+         border-bottom:1px solid var(--line);
+         background:linear-gradient(180deg,#1b1f2b,#0f1117)}
+  header h1{margin:0;font-size:18px;color:var(--accent2)}
+  header .sub{color:var(--muted);font-size:13px}
+  main{max-width:1120px;margin:0 auto;padding:22px 24px 60px}
+  .step{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+        padding:18px;margin-bottom:18px}
+  .step > h2{margin:0 0 14px;font-size:13px;letter-spacing:.6px;color:var(--accent2);
+             text-transform:uppercase;display:flex;align-items:center;gap:9px}
+  .num{display:inline-flex;align-items:center;justify-content:center;width:20px;
+       height:20px;border-radius:50%;background:var(--accent);color:#0b1020;
+       font-size:12px;font-weight:700}
+  label{display:block;margin:12px 0 5px;font-size:12.5px;color:var(--muted)}
+  input[type=text],input[type=number],select,textarea{width:100%;padding:9px 11px;
+    background:var(--panel2);border:1px solid var(--line);border-radius:6px;
+    color:var(--text);font:inherit}
+  .row{display:flex;gap:9px;align-items:stretch}
+  .row input{flex:1}
+  button,.btn{padding:9px 16px;background:var(--accent);color:#0b1020;border:0;
+    border-radius:6px;font:600 13.5px/1.2 inherit;cursor:pointer;white-space:nowrap}
+  button.ghost{background:transparent;color:var(--accent);border:1px solid var(--line)}
+  button.danger{background:transparent;color:var(--bad);border:1px solid var(--line)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button.big{padding:13px 26px;font-size:15px;width:100%;margin-top:6px}
+  .muted{color:var(--muted)}
+  .small{font-size:12.5px}
+  .mono{font-family:Consolas,monospace;font-size:12px}
+  .tpl-desc{color:var(--muted);font-size:12.5px;margin-top:7px}
+  .tpl-preview{margin-top:14px;display:flex;flex-direction:column;align-items:center;gap:6px;
+               background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:12px}
+  .tpl-preview canvas{border:2px solid #323b4e;border-radius:7px;background:#080b12;
+                      box-shadow:0 4px 14px rgba(0,0,0,.45);display:block}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));
+        gap:9px;max-height:340px;overflow:auto;padding:3px}
+  .ph{position:relative;border:1px solid var(--line);border-radius:7px;overflow:hidden;
+      background:var(--panel2)}
+  .ph img{width:100%;height:86px;object-fit:cover;display:block}
+  .ph .idx{position:absolute;top:3px;left:3px;background:rgba(8,11,20,.85);
+           color:#fff;font-size:10.5px;padding:1px 6px;border-radius:9px}
+  .ph .ops{display:flex;border-top:1px solid var(--line)}
+  .ph .ops button{flex:1;padding:4px 0;background:transparent;color:var(--muted);
+                  border:0;border-radius:0;font-size:12px}
+  .ph .ops button:hover{background:#2a3450;color:var(--text)}
+  .ph .ops button.x:hover{color:var(--bad)}
+  .job-actions{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+  .opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:14px}
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line);
+        font-size:13px}
+  th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+  .status{font-size:11px;padding:2px 8px;border-radius:11px;border:1px solid var(--line);
+          white-space:nowrap}
+  .s-done{color:var(--ok)} .s-failed,.s-cancelled{color:var(--bad)}
+  .s-rendering,.s-queued{color:var(--accent)}
+  .bar{height:5px;background:var(--panel2);border-radius:3px;overflow:hidden}
+  .bar>i{display:block;height:100%;background:var(--accent)}
+  .note{border-left:3px solid var(--warn);padding:7px 11px;margin:9px 0;
+        background:#221f14;color:#ecdfc2;font-size:12.5px;border-radius:0 6px 6px 0}
+  .err{border-left-color:var(--bad);background:#241a17;color:#f0cdc6}
+  .hint{color:var(--muted);font-size:12.5px;margin-top:7px}
+  .hide{display:none}
+</style>
+</head>
+<body>
+<header>
+  <h1>BeatCanvas</h1>
+  <span class="sub">photos, on the beat</span>
+</header>
+
+<main>
+<form method="post" action="/api/jobs" id="form">
+<input type="hidden" name="template" id="template">
+<input type="hidden" name="photo_order" id="photo_order">
+
+<!-- 1 ------------------------------------------------------------------ -->
+<div class="step">
+  <h2><span class="num">1</span> Pick a style</h2>
+  <select id="templateSelect" onchange="pickTemplate(this)">
+    <option value="">— choose a style —</option>
+    <option value="auto"
+            data-mode="auto"
+            data-name="Auto"
+            data-audio=""
+            data-animation="Cut"
+            data-reveal="0"
+            data-shape="box"
+            data-beats="1">
+      Let the music decide &middot; listens to the track and designs the edit
+    </option>
+    {% for t in templates %}
+    <option value="{{ t.path }}"
+            data-mode="{{ t.music_mode }}"
+            data-name="{{ t.name }}"
+            data-audio="{{ t.audio }}"
+            data-animation="{{ t.animation }}"
+            data-reveal="{{ t.reveal_tiles }}"
+            data-shape="{{ t.reveal_shape }}"
+            data-beats="{{ t.beats_per_clip }}">
+      {{ t.name }}{% if t.music_mode == 'any' %} · any music · {{ t.animation }}{% else %} · fixed · {{ t.audio }}{% endif %}{% if t.reveal_tiles %} · {{ t.reveal_shape }} reveal{% endif %}
+    </option>
+    {% endfor %}
+  </select>
+  <div id="tplDesc" class="tpl-desc"></div>
+  <div id="tplPreview" class="tpl-preview hide">
+    <canvas id="previewCanvas" width="135" height="240"></canvas>
+    <div class="muted small">live motion preview</div>
+  </div>
+</div>
+
+<!-- 2 ------------------------------------------------------------------ -->
+<div class="step">
+  <h2><span class="num">2</span> Photos</h2>
+  <div class="row">
+    <input type="text" name="photo_folder" id="photo_folder"
+           placeholder="Browse for a folder, or paste a path">
+    <button type="button" onclick="browseFor('folder')">Browse folder</button>
+    <button type="button" class="ghost" onclick="browseFor('photos')">Pick photos</button>
+    <button type="button" class="ghost" onclick="usePlaceholders()">Test cards</button>
+  </div>
+  <div id="photoMsg" class="hint"></div>
+
+  <div id="photoTools" class="hide" style="margin-top:12px">
+    <div class="row" style="gap:8px;flex-wrap:wrap">
+      <button type="button" class="ghost" onclick="sortPhotos('name')">Sort A&ndash;Z</button>
+      <button type="button" class="ghost" onclick="sortPhotos('reverse')">Reverse</button>
+      <button type="button" class="ghost" onclick="sortPhotos('shuffle')">Shuffle</button>
+      <button type="button" class="ghost" onclick="restorePhotos()">Reset</button>
+    </div>
+    <div class="hint">Use &#9664; &#9654; to move a photo, &times; to drop it.</div>
+    <div class="grid" id="grid"></div>
+  </div>
+</div>
+
+<!-- 3 ------------------------------------------------------------------ -->
+<div class="step" id="musicStep">
+  <h2><span class="num">3</span> Music</h2>
+  <div id="musicFixed" class="hide">
+    <div class="note" id="musicFixedNote"></div>
+  </div>
+  <div id="musicAny">
+    <div class="row">
+      <input type="text" name="music_path" id="music_path"
+             placeholder="Browse for a track, or drop one here">
+      <button type="button" onclick="browseFor('music')">Browse music</button>
+      <button type="button" class="ghost" onclick="loadMusic()">List folder</button>
+    </div>
+    <div id="musicMsg" class="hint"></div>
+    <select id="musicPick" class="hide" onchange="chooseTrack(this.value)"></select>
+  </div>
+  <input type="hidden" name="beat_markers" id="beat_markers">
+  <input type="hidden" name="strong_markers" id="strong_markers">
+  <input type="hidden" name="audio_duration" id="audio_duration">
+</div>
+
+<!-- 4 ------------------------------------------------------------------ -->
+<div class="step">
+  <h2><span class="num">4</span> Options</h2>
+  <div class="opts">
+    <div>
+      <label for="fill">Not enough photos?</label>
+      <select name="fill" id="fill">
+        <option value="repeat">Repeat them</option>
+        <option value="trim">Make a shorter video</option>
+      </select>
+    </div>
+    <div class="anyOnly hide">
+      <input type="hidden" name="beats_per_clip" id="beats_per_clip" value="1">
+    </div>
+    <div class="anyOnly">
+      <label for="max_seconds">Length</label>
+      <select name="max_seconds" id="max_seconds">
+        <option value="15">15 seconds</option>
+        <option value="30" selected>30 seconds</option>
+        <option value="60">1 minute</option>
+        <option value="0">whole song</option>
+      </select>
+    </div>
+    <div class="moveOnly">
+      <label for="direction">Movement</label>
+      <select name="direction" id="direction">
+        <option value="">as designed</option>
+        <option value="up">upward</option>
+        <option value="down">downward</option>
+        <option value="left">leftward</option>
+        <option value="right">rightward</option>
+      </select>
+    </div>
+    <div class="revealOnly">
+      <label for="reveal_shape">Piece shape</label>
+      <select name="reveal_shape" id="reveal_shape">
+        <option value="box">boxes</option>
+        <option value="circle">circles</option>
+      </select>
+    </div>
+    <div class="autoOnly">
+      <label for="look">Animation style</label>
+      <select name="look" id="look" onchange="lookChanged()">
+        {% for item in looks %}
+        <option value="{{ item.name }}" data-note="{{ item.note }}" data-uses="{{ item.uses }}"{% if item.name == 'mix' %} selected{% endif %}>{{ item.label }}</option>
+        {% endfor %}
+      </select>
+      <p id="lookNote" style="opacity:.75;font-size:.85em;margin:.35rem 0 0"></p>
+      <p id="lookUses" style="opacity:.55;font-size:.78em;margin:.2rem 0 0"></p>
+    </div>
+    <div class="autoOnly">
+      <label for="analysis">How to read the track</label>
+      <select name="analysis" id="analysis" onchange="readingChanged()">
+        {% for reading in analysis_presets %}
+        <option value="{{ reading.name }}" data-note="{{ reading.note }}"{% if reading.name == 'auto' %} selected{% endif %}>{{ reading.label }}</option>
+        {% endfor %}
+      </select>
+      <p id="analysisNote" style="opacity:.75;font-size:.85em;margin:.35rem 0 0"></p>
+    </div>
+    <div class="autoOnly">
+      <label for="pace">How busy</label>
+      <select name="pace" id="pace" onchange="paceChanged()">
+        {% for p in paces %}
+        <option value="{{ p.name }}" data-note="{{ p.note }}"
+                {% if p.name == 'medium' %}selected{% endif %}>{{ p.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="frame">Frame</label>
+      <select name="frame" id="frame" onchange="frameChanged()">
+        <option value="">as designed</option>
+        <option value="portrait">portrait 9:16</option>
+        <option value="landscape">landscape 16:9</option>
+        <option value="square">square 1:1</option>
+      </select>
+    </div>
+  </div>
+  <input type="hidden" name="intensity" id="intensity" value="">
+  <input type="hidden" name="cover_mode" id="cover_mode" value="">
+
+  <label for="name">Name the video</label>
+  <input type="text" name="name" id="name" placeholder="taken from the style name">
+  <label for="output_dir">Save videos in</label>
+  <div class="row">
+    <input type="text" name="output_dir" id="output_dir" value="{{ default_output }}">
+    <button type="button" onclick="browseFor('output')">Browse</button>
+    <button type="button" class="ghost" onclick="openOutput()">Open folder</button>
+  </div>
+
+
+
+  <button type="submit" class="big" id="go">Make the video</button>
+  <div class="hint" id="goHint">Pick a style and load some photos first.</div>
+</div>
+</form>
+
+<!-- videos ------------------------------------------------------------- -->
+<div class="step">
+  <h2><span class="num">5</span> Your videos</h2>
+  {% if jobs %}
+  <div class="job-actions">
+    <button type="button" class="danger" onclick="post('/api/jobs/clear')">Remove all finished</button>
+  </div>
+  {% endif %}
+  {% if not jobs %}
+    <div class="muted small">Nothing yet.</div>
+  {% else %}
+  <table>
+    <tr><th>Name</th><th>Status</th><th style="width:190px">Progress</th><th></th></tr>
+    {% for job in jobs %}
+    {% set out = job.result %}
+    <tr>
+      <td>
+        {{ job.name }}
+        {% if out.get('duration') %}
+          <div class="muted small">{{ out.get('duration') }}s &middot;
+            {{ out.get('clips') }} cuts &middot; {{ out.get('photos') }} photos
+            {% if out.get('size_mb') %}&middot; {{ out.get('size_mb') }}MB{% endif %}
+          </div>
+        {% endif %}
+      </td>
+      <td><span class="status s-{{ job.status }}">{{ job.status.replace('_',' ') }}</span></td>
+      <td>
+        {% if job.is_active %}
+          <div class="bar"><i style="width:{{ (job.progress*100)|round(1) }}%"></i></div>
+          <div class="muted small mono">{{ job.stage }}</div>
+        {% elif job.status == 'done' %}
+          <div class="muted small">{{ out.get('elapsed_seconds') }}s to render</div>
+        {% endif %}
+      </td>
+      <td style="white-space:nowrap">
+        {% if job.status == 'done' and out.get('video') %}
+          <button type="button" onclick="reveal({{ out.get('video')|tojson }})">
+            Show in folder</button>
+        {% elif job.is_active %}
+          <button type="button" class="danger"
+                  onclick="post('/api/jobs/{{ job.id }}/cancel')">Stop</button>
+        {% else %}
+          <button type="button" class="danger"
+                  onclick="post('/api/jobs/{{ job.id }}/delete')">Remove</button>
+        {% endif %}
+      </td>
+    </tr>
+    {% if job.error %}
+      <tr><td colspan="4"><div class="note err">{{ job.error }}</div></td></tr>
+    {% endif %}
+    {% for n in out.get('notes', []) %}
+      <tr><td colspan="4"><div class="note">{{ n }}</div></td></tr>
+    {% endfor %}
+    {% endfor %}
+  </table>
+  {% endif %}
+</div>
+</main>
+
+<script>
+const PLACEHOLDERS = {{ placeholder_dir|tojson }};
+const MIN_PHOTOS = {{ min_photos }};
+let photos = [], original = [], mode = null;
+
+/* -- template ------------------------------------------------------- */
+
+/* Show or hide a group of options, and disable its fields when hidden.
+   Hiding alone is not enough: a hidden input is still submitted, so an option that does
+   not apply to the chosen style would still be sent and acted on. */
+function setGroup(selector, on) {
+  document.querySelectorAll(selector).forEach(node => {
+    node.classList.toggle('hide', !on);
+    node.querySelectorAll('input,select,textarea').forEach(field => {
+      field.disabled = !on;
+    });
+  });
+}
+
+function pickTemplate(sel) {
+  const opt = sel.options[sel.selectedIndex];
+  if (!opt || !opt.value) {
+    document.getElementById('template').value = '';
+    document.getElementById('tplDesc').textContent = '';
+    stopPreview();
+    mode = null; refresh(); return;
+  }
+  document.getElementById('template').value = opt.value;
+  mode = opt.dataset.mode;
+  localStorage.setItem('bf_template', opt.value);
+  if (!document.getElementById('name').value.trim())
+    document.getElementById('name').placeholder = opt.dataset.name;
+
+  const fixed = mode === 'fixed';
+  document.getElementById('musicFixed').classList.toggle('hide', !fixed);
+  document.getElementById('musicAny').classList.toggle('hide', fixed);
+  document.getElementById('musicFixedNote').textContent =
+    'This style is cut to its own song (' + opt.dataset.audio +
+    '), so the music and the timing are already set.';
+  // In automatic mode there is no fixed style: the edit is designed from the track, so
+  // the per-style controls have nothing to act on and only the pace is a choice.
+  const auto = opt.dataset.mode === 'auto';
+  const moves = !auto && opt.dataset.animation !== 'Cut';
+  const reveals = !auto && Number(opt.dataset.reveal || 0) > 0;
+
+  // Start each control from the chosen style's own setting, so switching style does not
+  // carry the previous one's numbers over.
+  if (reveals && opt.dataset.shape)
+    document.getElementById('reveal_shape').value = opt.dataset.shape;
+
+  // A hidden field still submits. Disabling the ones that do not apply is what stops a
+  // leftover value being sent: a stray reveal setting turned every style into a reveal.
+  setGroup('.anyOnly', !fixed);
+  setGroup('.moveOnly', moves);
+  setGroup('.revealOnly', reveals);
+  setGroup('.autoOnly', auto);
+
+  // Show a short description below the dropdown.
+  let desc = opt.dataset.animation;
+  if (auto) desc = paceNote();
+  else if (fixed) desc += ' · ' + opt.dataset.audio;
+  document.getElementById('tplDesc').textContent = desc;
+  startPreview(opt.dataset.animation, Number(opt.dataset.reveal || 0),
+               document.getElementById('reveal_shape').value || opt.dataset.shape);
+  refresh();
+}
+
+/* The longest side stays fixed so the preview occupies the same space whatever the
+   frame shape, and the short side follows the chosen ratio. */
+const PREVIEW_LONG = 240;
+function sizePreviewCanvas(canvas) {
+  const ratios = {portrait: 9 / 16, landscape: 16 / 9, square: 1};
+  const chosen = document.getElementById('frame').value;
+  const ratio = ratios[chosen] !== undefined ? ratios[chosen] : 9 / 16;
+  if (ratio >= 1) {
+    canvas.width = PREVIEW_LONG;
+    canvas.height = Math.round(PREVIEW_LONG / ratio);
+  } else {
+    canvas.height = PREVIEW_LONG;
+    canvas.width = Math.round(PREVIEW_LONG * ratio);
+  }
+}
+
+/* Redraw the preview for the current style without touching any of the settings. Going
+   back through pickTemplate would reset the piece shape to the style's default, undoing
+   the choice that triggered the redraw. */
+function restartPreview() {
+  const sel = document.getElementById('templateSelect');
+  const opt = sel.options[sel.selectedIndex];
+  if (!opt || !opt.value) { stopPreview(); return; }
+  startPreview(opt.dataset.animation, Number(opt.dataset.reveal || 0),
+               document.getElementById('reveal_shape').value || opt.dataset.shape);
+}
+
+function frameChanged() { restartPreview(); }
+
+/* -- native pickers -------------------------------------------------- *
+ * This app runs on your own machine, so it can put Windows' own dialogs in front of you
+ * instead of asking you to paste paths. The dialog opens on the machine running the
+ * server, which is the same machine as the browser here.                               */
+async function browseFor(kind) {
+  const start = kind === 'music'
+    ? document.getElementById('music_path').value
+    : kind === 'output'
+      ? document.getElementById('output_dir').value
+      : document.getElementById('photo_folder').value;
+
+  const note = kind === 'music'
+    ? document.getElementById('musicMsg')
+    : document.getElementById('photoMsg');
+  if (note) note.textContent = 'Waiting for the dialog...';
+
+  let reply;
+  try {
+    if (window.beatcanvas && window.beatcanvas.desktop) {
+      // Inside the desktop shell the dialog is Electron's own, which behaves like every
+      // other dialog on the machine and needs no help from the server.
+      reply = await window.beatcanvas.pick(kind, start || '');
+    } else {
+      // In a browser tab the server opens the dialog instead, on the machine it runs on.
+      const response = await fetch('/api/browse', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({kind: kind, start: start || ''}),
+      });
+      reply = await response.json();
+      if (!response.ok) throw new Error(reply.detail || 'the dialog failed');
+    }
+    if (reply && reply.error) throw new Error(reply.error);
+  } catch (error) {
+    if (note) note.textContent = 'Could not open the dialog: ' + error.message;
+    return;
+  }
+  if (note) note.textContent = '';
+  if (reply.cancelled) return;
+
+  if (kind === 'music') {
+    chooseTrack(reply.path);
+    if (note) note.textContent = reply.path.split(/[\\/]/).pop();
+    return;
+  }
+  if (kind === 'output') {
+    document.getElementById('output_dir').value = reply.path;
+    return;
+  }
+  if (kind === 'photos') {
+    // Individual photos chosen: keep exactly those, in the order they were given.
+    if (reply.paths && reply.paths.length) {
+      document.getElementById('photo_folder').value = reply.folder || '';
+      adoptPhotoPaths(reply.paths);
+    }
+    return;
+  }
+  document.getElementById('photo_folder').value = reply.path;
+  loadPhotos();
+}
+
+async function openOutput() {
+  const folder = document.getElementById('output_dir').value;
+  try {
+    if (window.beatcanvas && window.beatcanvas.desktop) {
+      const reply = await window.beatcanvas.openFolder(folder || '');
+      if (reply && reply.error) alert(reply.error);
+      return;
+    }
+    const response = await fetch('/api/open-folder', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: new URLSearchParams({path: folder || ''}),
+    });
+    if (!response.ok) {
+      const reply = await response.json();
+      alert(reply.detail || 'could not open that folder');
+    }
+  } catch (error) {
+    alert('could not open that folder: ' + error.message);
+  }
+}
+
+/* In automatic mode the pace is the only real choice, so its description stands in for
+   the style description. */
+function paceNote() {
+  const sel = document.getElementById('pace');
+  const opt = sel && sel.options[sel.selectedIndex];
+  return opt ? opt.dataset.note : '';
+}
+
+// A look also names the arrivals it permits. Saying "grids only" and then listing what
+// that actually means is the difference between a choice and a guess.
+function lookChanged() {
+  const sel = document.getElementById('look');
+  const note = document.getElementById('lookNote');
+  const uses = document.getElementById('lookUses');
+  if (!sel) return;
+  const opt = sel.options[sel.selectedIndex];
+  if (note) note.textContent = opt ? (opt.dataset.note || '') : '';
+  if (uses) uses.textContent = opt ? ('uses: ' + (opt.dataset.uses || '')) : '';
+}
+
+// Each reading of the track explains itself, so the choice is made on what it does
+// rather than on a name that means nothing until you have tried all seven.
+function readingChanged() {
+  const sel = document.getElementById('analysis');
+  const note = document.getElementById('analysisNote');
+  if (!sel || !note) return;
+  const opt = sel.options[sel.selectedIndex];
+  note.textContent = opt ? (opt.dataset.note || '') : '';
+}
+
+function paceChanged() {
+  const sel = document.getElementById('templateSelect');
+  const opt = sel.options[sel.selectedIndex];
+  if (opt && opt.dataset.mode === 'auto')
+    document.getElementById('tplDesc').textContent = paceNote();
+}
+
+/* -- template preview ----------------------------------------------- */
+let _previewRaf = null;
+const _placeholderImgs = [];
+
+// Preload test placeholder cards for the preview
+(function preloadPlaceholders() {
+  for (let i = 1; i <= 6; i++) {
+    const img = new Image();
+    const num = String(i).padStart(2, '0');
+    img.src = '/thumb?path=' + encodeURIComponent(PLACEHOLDERS + '/photo_' + num + '.png') + '&size=360';
+    _placeholderImgs.push(img);
+  }
+})();
+
+function stopPreview() {
+  if (_previewRaf) { cancelAnimationFrame(_previewRaf); _previewRaf = null; }
+  document.getElementById('tplPreview').classList.add('hide');
+}
+
+function startPreview(animName, revealTiles, revealShape) {
+  stopPreview();
+  const c = document.getElementById('previewCanvas');
+  if (!c) return;
+  document.getElementById('tplPreview').classList.remove('hide');
+  // The preview is drawn at the shape the video will actually be, so a landscape choice
+  // is visible before rendering rather than after.
+  sizePreviewCanvas(c);
+  const ctx = c.getContext('2d');
+  const W = c.width, H = c.height;
+  const CYCLE = 1300; // ms per clip
+  revealTiles = Number(revealTiles || 0);
+  revealShape = revealShape || 'box';
+
+  function easeOut(t) { return 1 - Math.pow(1 - t, 2.5); }
+  function easeIO(t) { return t < .5 ? 2*t*t : 1 - Math.pow(-2*t+2, 2)/2; }
+
+  function getCardImage(index) {
+    if (photos && photos.length > 0) {
+      const p = photos[index % photos.length];
+      if (!p._previewImg) {
+        p._previewImg = new Image();
+        p._previewImg.src = '/thumb?path=' + encodeURIComponent(p.path) + '&size=360';
+      }
+      if (p._previewImg.complete && p._previewImg.naturalWidth > 0) return p._previewImg;
+    }
+    const sample = _placeholderImgs[index % _placeholderImgs.length];
+    if (sample && sample.complete && sample.naturalWidth > 0) return sample;
+    return null;
+  }
+
+  function applyTransform(name, t) {
+    switch (name) {
+      case 'Cut': break;
+      case 'Pulse': {
+        const s = t < .55 ? 1 + .14 * (1 - easeOut(t/.55)) : 1;
+        ctx.translate(W/2, H/2); ctx.scale(s, s); ctx.translate(-W/2, -H/2);
+        break;
+      }
+      case 'Bounce': {
+        // Mirrors the renderer: the spring goes upward, never below 1.0, because a
+        // scale under 1.0 would show black edges.
+        let s;
+        if (t < .32) s = 1.24 - .24 * easeOut(t/.32);
+        else if (t < .48) s = 1 + .06 * easeIO((t-.32)/.16);
+        else if (t < .75) s = 1.06 - .06 * easeIO((t-.48)/.27);
+        else s = 1;
+        ctx.translate(W/2, H/2); ctx.scale(s, s); ctx.translate(-W/2, -H/2);
+        break;
+      }
+      case 'Slide': {
+        const off = t < .45 ? (1 - easeOut(t/.45)) * H * .45 : 0;
+        ctx.translate(0, -off);
+        break;
+      }
+      case 'Whip': {
+        const off = t < .28 ? (1 - easeOut(t/.28)) * H * .8 : 0;
+        const r = t < .35 ? -5 * (1 - easeOut(t/.35)) : 0;
+        ctx.translate(W/2, H/2); ctx.rotate(r * Math.PI / 180); ctx.translate(-W/2, -H/2);
+        ctx.translate(0, -off);
+        break;
+      }
+      case 'Pendulum 1': {
+        let oy;
+        if (t < .5) oy = (-.45 + .40 * easeOut(t/.5)) * (H/2);
+        else oy = (-.05 - .40 * easeOut((t-.5)/.5)) * (H/2);
+        const r = 3 - 6 * t;
+        ctx.translate(W/2, H/2); ctx.rotate(r * Math.PI / 180); ctx.translate(-W/2, -H/2);
+        ctx.translate(0, oy);
+        break;
+      }
+      case 'Drift': {
+        const oy = (-.10 + .20 * t) * (H/2);
+        const s = 1.05 + .09 * t;
+        ctx.translate(W/2, H/2); ctx.scale(s, s); ctx.translate(-W/2, -H/2);
+        ctx.translate(0, oy);
+        break;
+      }
+      case 'Fade': {
+        ctx.globalAlpha = t < .35 ? easeIO(t/.35) : 1;
+        break;
+      }
+      case 'Zoom In': {
+        const s = 1.0 + .16 * easeIO(t);
+        ctx.translate(W/2, H/2); ctx.scale(s, s); ctx.translate(-W/2, -H/2);
+        break;
+      }
+      case 'Spin': {
+        const r = -4 + 8 * easeIO(t);
+        const s = 1.10 - .05 * t;
+        ctx.translate(W/2, H/2); ctx.rotate(r * Math.PI / 180); ctx.scale(s, s);
+        ctx.translate(-W/2, -H/2);
+        break;
+      }
+      case 'Zoom Out': {
+        const s = 1.20 - .20 * easeIO(t);
+        ctx.translate(W/2, H/2); ctx.scale(s, s); ctx.translate(-W/2, -H/2);
+        break;
+      }
+      case 'Punch In': {
+        const s = t < .18 ? 1.32 - .32 * easeOut(t/.18) : 1;
+        ctx.translate(W/2, H/2); ctx.scale(s, s); ctx.translate(-W/2, -H/2);
+        break;
+      }
+      case 'Sway': {
+        const r = t < .5 ? -2.5 + 5 * easeIO(t/.5) : 2.5 - 5 * easeIO((t-.5)/.5);
+        ctx.translate(W/2, H/2); ctx.rotate(r * Math.PI / 180); ctx.translate(-W/2, -H/2);
+        break;
+      }
+      case 'Glide': {
+        ctx.translate((-.16 + .32 * t) * (H/2), 0);
+        break;
+      }
+    }
+  }
+
+  const t0 = performance.now();
+  function frame(now) {
+    const elapsed = now - t0;
+    const clipIdx = Math.floor(elapsed / CYCLE);
+    const t = (elapsed % CYCLE) / CYCLE;
+
+    ctx.clearRect(0, 0, W, H);
+
+    // Outer clipping boundary to simulate video aspect frame
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, W, H);
+    ctx.clip();
+
+    ctx.save();
+    applyTransform(animName, t);
+
+    // Draw card with headroom so animations never reveal empty edges
+    const headroom = 1.45;
+    const dw = W * headroom;
+    const dh = H * headroom;
+    const dx = (W - dw) / 2;
+    const dy = (H - dh) / 2;
+
+    const img = getCardImage(clipIdx);
+
+    function drawPhotoLayer(ctxAlpha) {
+      ctx.save();
+      if (ctxAlpha !== undefined) ctx.globalAlpha = ctxAlpha;
+      if (img) {
+        const iw = img.naturalWidth, ih = img.naturalHeight;
+        const r = Math.max(dw / iw, dh / ih);
+        const nw = iw * r, nh = ih * r;
+        const cx = dx + (dw - nw) / 2;
+        const cy = dy + (dh - nh) / 2;
+        ctx.drawImage(img, cx, cy, nw, nh);
+      } else {
+        const colors = [['#d15438','#8b2848'], ['#28548b','#1c7062'], ['#8b7028','#5a288b']];
+        const pal = colors[clipIdx % colors.length];
+        const g = ctx.createLinearGradient(dx, dy, dx + dw, dy + dh);
+        g.addColorStop(0, pal[0]); g.addColorStop(1, pal[1]);
+        ctx.fillStyle = g;
+        ctx.fillRect(dx, dy, dw, dh);
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        ctx.font = 'bold 22px "Segoe UI",sans-serif';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('Photo ' + ((clipIdx % 6) + 1), W / 2, H / 2);
+      }
+      ctx.restore();
+    }
+
+    if (revealTiles > 0) {
+      // The piece count is not fixed: it follows however many beats the photo spans, so
+      // the preview varies it from one photo to the next to show that.
+      const pieces = 3 + (clipIdx % 4);
+      const seam = 1.5;
+
+      // 1. Dark silhouette of the whole photo, hinting at what is coming
+      drawPhotoLayer(0.14);
+
+      // 2. The pieces revealed so far, one per beat of this photo
+      const cols = Math.max(1, Math.round(Math.sqrt(pieces * (W / H))));
+      const rows = Math.ceil(pieces / cols);
+      const tw = W / cols;
+      const th = H / rows;
+      const shown = Math.min(pieces, Math.max(1, Math.floor(t * pieces) + 1));
+
+      function piecePath(i) {
+        const r = Math.floor(i / cols);
+        const c = i % cols;
+        const x = c * tw + seam, y = r * th + seam;
+        const w = tw - seam * 2, h = th - seam * 2;
+        if (revealShape === 'circle') {
+          ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+        } else {
+          ctx.rect(x, y, w, h);
+        }
+      }
+
+      ctx.save();
+      ctx.beginPath();
+      for (let i = 0; i < shown; i++) piecePath(i);
+      ctx.clip();
+      drawPhotoLayer(1.0);
+      ctx.restore();
+
+      // 3. A brief lift on the piece that just landed
+      const tilePhase = (t * pieces) % 1.0;
+      if (tilePhase < 0.45) {
+        const flash = Math.pow(1 - tilePhase / 0.45, 2) * 0.35;
+        ctx.save();
+        ctx.beginPath();
+        piecePath(shown - 1);
+        ctx.fillStyle = `rgba(255,255,255,${flash})`;
+        ctx.fill();
+        ctx.restore();
+      }
+    } else {
+      drawPhotoLayer(1.0);
+    }
+
+    ctx.restore(); // restore transform
+
+    // Subtle overlay badge
+    ctx.fillStyle = 'rgba(11,16,32,0.75)';
+    ctx.fillRect(5, H - 22, W - 10, 17);
+    ctx.fillStyle = '#7ee0c0';
+    ctx.font = '10px Consolas,monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText((animName || 'Cut') + (revealTiles ? ` (${revealTiles} tiles)` : ''), W / 2, H - 13);
+
+    ctx.restore(); // restore clip
+
+    _previewRaf = requestAnimationFrame(frame);
+  }
+  _previewRaf = requestAnimationFrame(frame);
+}
+
+/* -- photos --------------------------------------------------------- */
+function usePlaceholders() {
+  document.getElementById('photo_folder').value = PLACEHOLDERS;
+  loadPhotos();
+}
+
+async function loadPhotos() {
+  const folder = document.getElementById('photo_folder').value.trim();
+  const msg = document.getElementById('photoMsg');
+  if (!folder) { msg.textContent = 'Paste a folder path first.'; return; }
+  msg.textContent = 'Reading...';
+  const r = await fetch('/api/photos?folder=' + encodeURIComponent(folder));
+  if (!r.ok) {
+    msg.textContent = (await r.json().catch(() => ({detail:'failed'}))).detail;
+    return;
+  }
+  const data = await r.json();
+  photos = data.photos.slice();
+  original = photos.slice();
+  document.getElementById('photoTools').classList.remove('hide');
+  drawPhotos();
+  msg.textContent = `${photos.length} photo(s) loaded.`;
+}
+
+/* Photos chosen one by one in the dialog. They keep the order they were given rather than
+   being re-read from the folder, because choosing them individually is itself a statement
+   about which ones and in what order. */
+function adoptPhotoPaths(paths) {
+  const name = p => p.split(/[\\/]/).pop();
+  photos = paths.map(p => ({path: p, name: name(p)}));
+  original = photos.slice();
+  document.getElementById('photoTools').classList.remove('hide');
+  drawPhotos();
+  const msg = document.getElementById('photoMsg');
+  msg.textContent = `${photos.length} photo(s) chosen, in the order you picked them.`;
+}
+
+function drawPhotos() {
+  const grid = document.getElementById('grid');
+  grid.innerHTML = photos.map((p, i) => `
+    <div class="ph">
+      <span class="idx">${i + 1}</span>
+      <img loading="lazy" src="/thumb?path=${encodeURIComponent(p.path)}" alt="">
+      <div class="ops">
+        <button type="button" onclick="movePhoto(${i},-1)" title="earlier">&#9664;</button>
+        <button type="button" onclick="movePhoto(${i},1)" title="later">&#9654;</button>
+        <button type="button" class="x" onclick="dropPhoto(${i})" title="remove">&times;</button>
+      </div>
+    </div>`).join('');
+  document.getElementById('photo_order').value = photos.map(p => p.path).join('\n');
+  document.getElementById('photoMsg').textContent =
+    photos.length + ' photo' + (photos.length === 1 ? '' : 's') + ' in this order';
+  refresh();
+}
+
+function movePhoto(i, d) {
+  const j = i + d;
+  if (j < 0 || j >= photos.length) return;
+  [photos[i], photos[j]] = [photos[j], photos[i]];
+  drawPhotos();
+}
+function dropPhoto(i) { photos.splice(i, 1); drawPhotos(); }
+function restorePhotos() { photos = original.slice(); drawPhotos(); }
+function sortPhotos(how) {
+  if (how === 'name') photos.sort((a, b) => a.name.localeCompare(b.name, undefined,
+    {numeric: true}));
+  else if (how === 'reverse') photos.reverse();
+  else for (let i = photos.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [photos[i], photos[j]] = [photos[j], photos[i]];
+  }
+  drawPhotos();
+}
+
+/* -- beat editor (disabled) ----------------------------------------- */
+/* The beat editor UI is turned off. The worker auto-analyses the music at
+   render time, so no manual beat editing is needed. Stub functions are kept
+   so any lingering references do not throw. */
+let bmarks = [], envelope = [], span = 0, sens = 1.0;
+function analyse() {}
+function drawBeats() {}
+
+/* -- drag and drop -------------------------------------------------- */
+(function wireDrop() {
+  const bar = document.createElement('div');
+  bar.id = 'dropBar';
+  bar.style.cssText = 'position:fixed;inset:0;background:rgba(11,16,32,.86);' +
+    'display:none;align-items:center;justify-content:center;z-index:99;' +
+    'font-size:20px;color:#7ee0c0;border:3px dashed #5b8cff;pointer-events:none';
+  bar.textContent = 'Drop photos and music here';
+  document.body.appendChild(bar);
+
+  let depth = 0;
+  const show = on => { bar.style.display = on ? 'flex' : 'none'; };
+
+  window.addEventListener('dragenter', e => {
+    e.preventDefault(); depth++; show(true);
+  });
+  window.addEventListener('dragover', e => e.preventDefault());
+  window.addEventListener('dragleave', e => {
+    e.preventDefault(); depth = Math.max(0, depth - 1); if (!depth) show(false);
+  });
+  window.addEventListener('drop', async e => {
+    e.preventDefault(); depth = 0; show(false);
+    const files = [...(e.dataTransfer?.files || [])];
+    if (!files.length) return;
+
+    const msg = document.getElementById('photoMsg');
+    msg.textContent = `Copying ${files.length} file(s)...`;
+    const body = new FormData();
+    files.forEach(f => body.append('files', f));
+    const r = await fetch('/api/drop', {method: 'POST', body});
+    if (!r.ok) {
+      msg.textContent = (await r.json().catch(() => ({detail:'upload failed'}))).detail;
+      return;
+    }
+    const d = await r.json();
+    if (d.music) {
+      document.getElementById('music_path').value = d.music;
+      document.getElementById('musicMsg').textContent = 'Track ready.';
+    }
+    if (d.photo_folder) {
+      document.getElementById('photo_folder').value = d.photo_folder;
+      await loadPhotos();
+    }
+    if (d.skipped.length) {
+      msg.textContent += `  (ignored: ${d.skipped.slice(0, 4).join(', ')})`;
+    }
+    refresh();
+  });
+})();
+
+/* -- music ---------------------------------------------------------- */
+async function loadMusic() {
+  const value = document.getElementById('music_path').value.trim();
+  const msg = document.getElementById('musicMsg');
+  if (!value) { msg.textContent = 'Paste a file or folder first.'; return; }
+  msg.textContent = 'Reading...';
+  const r = await fetch('/api/music?folder=' + encodeURIComponent(value));
+  if (!r.ok) {
+    msg.textContent = (await r.json().catch(() => ({detail:'failed'}))).detail;
+    return;
+  }
+  const data = await r.json();
+  const pick = document.getElementById('musicPick');
+  pick.innerHTML = '<option value="">choose a track...</option>' +
+    data.tracks.map(t => `<option value="${t.path}">${t.name}</option>`).join('');
+  pick.classList.remove('hide');
+  msg.textContent = data.tracks.length + ' track(s) found';
+}
+function chooseTrack(path) {
+  if (path) document.getElementById('music_path').value = path;
+  refresh();
+}
+
+/* -- submit gate ---------------------------------------------------- */
+function refresh() {
+  const hasTpl = !!document.getElementById('template').value;
+  const enough = photos.length >= MIN_PHOTOS;
+  const music = mode !== 'any' ||
+    !!document.getElementById('music_path').value.trim();
+  const ok = hasTpl && enough && music;
+  document.getElementById('go').disabled = !ok;
+  const missing = [];
+  if (!hasTpl) missing.push('pick a style');
+  if (!enough) missing.push(`load at least ${MIN_PHOTOS} photos`);
+  if (!music) missing.push('choose a music file');
+  document.getElementById('goHint').textContent = ok
+    ? 'Renders in about half a minute. It will appear below when done.'
+    : 'Still to do: ' + missing.join(', ') + '.';
+}
+document.getElementById('music_path').addEventListener('input', () => {
+  document.getElementById('beat_markers').value = '';
+  document.getElementById('strong_markers').value = '';
+  refresh();
+});
+// Show the piece shape in the preview as soon as it is chosen.
+document.getElementById('reveal_shape').addEventListener('change', restartPreview);
+
+/* -- jobs ----------------------------------------------------------- */
+async function post(url) {
+  const r = await fetch(url, {method: 'POST'});
+  if (!r.ok) alert((await r.json().catch(() => ({detail:'failed'}))).detail);
+  await refreshJobs();
+}
+async function reveal(path) {
+  const body = new FormData();
+  body.append('path', path);
+  const r = await fetch('/api/reveal', {method: 'POST', body});
+  if (!r.ok) alert((await r.json().catch(() => ({detail:'failed'}))).detail);
+}
+
+/* -- live job table ------------------------------------------------- */
+let _pollTimer = null;
+
+function _statusClass(s) {
+  if (s === 'done') return 's-done';
+  if (s === 'failed' || s === 'cancelled') return 's-failed';
+  if (s === 'rendering' || s === 'queued') return 's-rendering';
+  return '';
+}
+
+function _renderJobRow(job) {
+  const out = job.result || {};
+  let detailHtml = '';
+  if (out.duration) {
+    detailHtml = `<div class="muted small">${out.duration}s &middot; ${out.clips} cuts &middot; ${out.photos} photos`
+      + (out.size_mb ? ` &middot; ${out.size_mb}MB` : '') + `</div>`;
+  }
+
+  let progressHtml = '';
+  if (job.is_active) {
+    const pct = (job.progress * 100).toFixed(1);
+    progressHtml = `<div class="bar"><i style="width:${pct}%"></i></div>`
+      + `<div class="muted small mono">${job.stage}</div>`;
+  } else if (job.status === 'done' && out.elapsed_seconds) {
+    progressHtml = `<div class="muted small">${out.elapsed_seconds}s to render</div>`;
+  }
+
+  let actionHtml = '';
+  if (job.status === 'done' && out.video) {
+    actionHtml = `<button type="button" onclick="reveal(${JSON.stringify(out.video)})">Show in folder</button>`;
+  } else if (job.is_active) {
+    actionHtml = `<button type="button" class="danger" onclick="post('/api/jobs/${job.id}/cancel')">Stop</button>`;
+  } else {
+    actionHtml = `<form method="post" action="/api/jobs/${job.id}/delete" style="display:inline">`
+      + `<button type="submit" class="danger">Remove</button></form>`;
+  }
+
+  let extra = '';
+  if (job.error) {
+    extra += `<tr><td colspan="4"><div class="note err">${job.error}</div></td></tr>`;
+  }
+  for (const n of (out.notes || [])) {
+    extra += `<tr><td colspan="4"><div class="note">${n}</div></td></tr>`;
+  }
+
+  return `<tr>
+    <td>${job.name}${detailHtml}</td>
+    <td><span class="status ${_statusClass(job.status)}">${job.status.replace(/_/g, ' ')}</span></td>
+    <td style="width:190px">${progressHtml}</td>
+    <td style="white-space:nowrap">${actionHtml}</td>
+  </tr>${extra}`;
+}
+
+async function refreshJobs() {
+  try {
+    const r = await fetch('/api/jobs');
+    if (!r.ok) return;
+    const data = await r.json();
+    const jobs = data.jobs || [];
+    const section = document.querySelector('main > .step:last-child');
+    if (!section) return;
+
+    // Rebuild the job-actions and table
+    const oldActions = section.querySelector('.job-actions');
+    const oldTable = section.querySelector('table');
+    const oldEmpty = section.querySelector('.muted.small');
+
+    if (jobs.length === 0) {
+      if (oldActions) oldActions.remove();
+      if (oldTable) oldTable.remove();
+      if (!oldEmpty) {
+        const div = document.createElement('div');
+        div.className = 'muted small';
+        div.textContent = 'Nothing yet.';
+        section.appendChild(div);
+      }
+    } else {
+      if (oldEmpty) oldEmpty.remove();
+
+      // Actions bar
+      if (!oldActions) {
+        const bar = document.createElement('div');
+        bar.className = 'job-actions';
+        bar.innerHTML = '<form method="post" action="/api/jobs/clear" style="display:inline">'
+          + '<button type="submit" class="danger">Remove all finished</button></form>';
+        const heading = section.querySelector('h2');
+        if (heading) heading.after(bar);
+        else section.prepend(bar);
+      }
+
+      // Table
+      const rows = jobs.map(_renderJobRow).join('');
+      const tableHtml = `<table><tr><th>Name</th><th>Status</th><th style="width:190px">Progress</th><th></th></tr>${rows}</table>`;
+      if (oldTable) {
+        oldTable.outerHTML = tableHtml;
+      } else {
+        const container = document.createElement('div');
+        container.innerHTML = tableHtml;
+        section.appendChild(container.firstChild);
+      }
+    }
+
+    // Schedule next poll if any job is still active
+    const hasActive = jobs.some(j => j.is_active);
+    if (hasActive && !_pollTimer) {
+      _pollTimer = setInterval(refreshJobs, 2500);
+    } else if (!hasActive && _pollTimer) {
+      clearInterval(_pollTimer);
+      _pollTimer = null;
+    }
+  } catch (e) {
+    // Network hiccup, just skip this cycle
+  }
+}
+
+/* -- restore state after page load ---------------------------------- */
+// Every control whose value should survive making a video. A control missing from this list
+// silently snaps back to its default on the reload after submit, which is worse than not
+// remembering at all: the form looks like it kept your choice when it did not. Pace, the
+// reading and the animation style were all missing, so the three decisions that most change
+// the result were the three that quietly reset.
+const _optionFields = ['beats_per_clip', 'max_seconds', 'direction', 'fill',
+                       'frame', 'reveal_shape', 'name',
+                       'pace', 'analysis', 'look'];
+
+(function restoreState() {
+  // Nothing is chosen yet, so every style-specific option starts disabled. Otherwise a
+  // default value sits in the form and gets submitted for a style that does not use it.
+  setGroup('.anyOnly', false);
+  setGroup('.moveOnly', false);
+  setGroup('.revealOnly', false);
+  setGroup('.autoOnly', false);
+  readingChanged();
+  lookChanged();
+
+  const saved = localStorage.getItem('bf_template');
+  if (saved) {
+    const sel = document.getElementById('templateSelect');
+    for (let i = 0; i < sel.options.length; i++) {
+      if (sel.options[i].value === saved) {
+        sel.selectedIndex = i;
+        pickTemplate(sel);
+        break;
+      }
+    }
+  }
+
+  // Restore user-chosen options AFTER pickTemplate, so the template's defaults
+  // do not overwrite what the user actually selected.
+  for (const id of _optionFields) {
+    const val = localStorage.getItem('bf_opt_' + id);
+    if (val !== null) {
+      const el = document.getElementById(id);
+      if (el && !el.disabled) el.value = val;
+    }
+  }
+
+  // The descriptions under the dropdowns are set by their change handlers, which the browser
+  // does not fire when a value is restored in code. Without this the select reads "Grids
+  // only" while the text beneath it still describes Mix, which is exactly the kind of
+  // disagreement that makes you doubt what is actually selected.
+  readingChanged();
+  lookChanged();
+
+  // If the frame changed, update the preview to match.
+  restartPreview();
+
+  const savedFolder = localStorage.getItem('bf_photo_folder');
+  if (savedFolder) {
+    document.getElementById('photo_folder').value = savedFolder;
+    loadPhotos();
+  }
+  const savedMusic = localStorage.getItem('bf_music');
+  if (savedMusic) {
+    document.getElementById('music_path').value = savedMusic;
+  }
+  refresh();
+})();
+
+// Save state before form submit.
+document.getElementById('form').addEventListener('submit', () => {
+  localStorage.setItem('bf_photo_folder',
+    document.getElementById('photo_folder').value);
+  localStorage.setItem('bf_music',
+    document.getElementById('music_path').value);
+  // Persist every user-chosen option so it survives the POST/redirect reload.
+  for (const id of _optionFields) {
+    const el = document.getElementById(id);
+    if (el && !el.disabled) localStorage.setItem('bf_opt_' + id, el.value);
+  }
+});
+
+// Saving only on submit loses the choice if you change something and then reload, or open a
+// second window. Saving as you go costs nothing and means the form always shows what you
+// last decided rather than what the page was built with.
+document.getElementById('form').addEventListener('change', (event) => {
+  const el = event.target;
+  if (el && el.id && _optionFields.includes(el.id) && !el.disabled) {
+    localStorage.setItem('bf_opt_' + el.id, el.value);
+  }
+});
+
+// Start polling if the page loaded with active jobs
+{% if jobs|selectattr('is_active')|list %}
+_pollTimer = setInterval(refreshJobs, 2500);
+{% endif %}
+</script>
+</body>
+</html>

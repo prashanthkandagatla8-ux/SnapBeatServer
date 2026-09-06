@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "name": "Beat Slide",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30.0,
+  "music_mode": "any",
+  "animation": "Slide",
+  "axis": "-y",
+  "cover_mode": "mirror",
+  "beats_per_clip": 1,
+  "reveal_tiles": 0,
+  "reveal_order": "random",
+  "reveal_shape": "box",
+  "min_clip_duration": 0.22,
+  "max_seconds": 30.0,
+  "audio_path": "",
+  "audio_name": "",
+  "audio_start": 0.0,
+  "source_draft": "",
+  "notes": [
+    "Photos slide in from one side and stay, like dealing cards."
+  ],
+  "beat_markers": [],
+  "clips": []
+}

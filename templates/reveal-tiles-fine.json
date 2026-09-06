@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "name": "Reveal Sequence",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30.0,
+  "music_mode": "any",
+  "animation": "Cut",
+  "axis": "-y",
+  "cover_mode": "zoom",
+  "beats_per_clip": 1,
+  "reveal_tiles": 1,
+  "reveal_order": "sequence",
+  "reveal_shape": "box",
+  "min_clip_duration": 0.12,
+  "max_seconds": 30.0,
+  "audio_path": "",
+  "audio_name": "",
+  "audio_start": 0.0,
+  "source_draft": "",
+  "notes": [
+    "Boxes fill in reading order instead of at random, which makes the rhythm of the reveal easy to follow."
+  ],
+  "beat_markers": [],
+  "clips": []
+}

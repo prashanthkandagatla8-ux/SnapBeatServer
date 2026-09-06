@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "name": "Sway",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30.0,
+  "music_mode": "any",
+  "animation": "Sway",
+  "axis": "-y",
+  "cover_mode": "zoom",
+  "beats_per_clip": 4,
+  "reveal_tiles": 0,
+  "reveal_order": "random",
+  "reveal_shape": "box",
+  "min_clip_duration": 0.9,
+  "max_seconds": 30.0,
+  "audio_path": "",
+  "audio_name": "",
+  "audio_start": 0.0,
+  "source_draft": "",
+  "notes": [
+    "A slow lean one way and back across each photo, changing every fourth beat. Built for ballads, where anything faster feels rushed."
+  ],
+  "beat_markers": [],
+  "clips": []
+}

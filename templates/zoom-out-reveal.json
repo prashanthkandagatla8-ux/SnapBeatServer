@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "name": "Zoom Out",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30.0,
+  "music_mode": "any",
+  "animation": "Zoom Out",
+  "axis": "-y",
+  "cover_mode": "zoom",
+  "beats_per_clip": 2,
+  "reveal_tiles": 0,
+  "reveal_order": "random",
+  "reveal_shape": "box",
+  "min_clip_duration": 0.4,
+  "max_seconds": 30.0,
+  "audio_path": "",
+  "audio_name": "",
+  "audio_start": 0.0,
+  "source_draft": "",
+  "notes": [
+    "Each photo opens wide and eases back into the frame, which pulls the eye inwards. Calmer than a punch but still directed."
+  ],
+  "beat_markers": [],
+  "clips": []
+}

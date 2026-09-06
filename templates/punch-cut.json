@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "name": "Punch Cut",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30.0,
+  "music_mode": "any",
+  "animation": "Punch In",
+  "axis": "-y",
+  "cover_mode": "zoom",
+  "beats_per_clip": 1,
+  "reveal_tiles": 0,
+  "reveal_order": "random",
+  "reveal_shape": "box",
+  "min_clip_duration": 0.18,
+  "max_seconds": 30.0,
+  "audio_path": "",
+  "audio_name": "",
+  "audio_start": 0.0,
+  "source_draft": "",
+  "notes": [
+    "A hard scale snap that hits exactly on the beat and then holds still. Made for sharp drums; the stillness between hits is what sells it."
+  ],
+  "beat_markers": [],
+  "clips": []
+}

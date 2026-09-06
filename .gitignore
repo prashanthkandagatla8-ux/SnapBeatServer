@@ -1,0 +1,20 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# SnapBeat Server Specific
+_logs/
+_dropped/
+output/
+jobs/
+*.db
+*.sqlite3
+
+# OS/IDE
+.DS_Store
+.idea/
+.vscode/

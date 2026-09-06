@@ -1,0 +1,25 @@
+{
+  "name": "beatcanvas-desktop",
+  "productName": "BeatCanvas",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Desktop shell for BeatCanvas: beat-synced slideshows from your own music",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0"
+  },
+  "build": {
+    "appId": "com.prash.beatcanvas",
+    "productName": "BeatCanvas",
+    "files": ["main.js", "preload.js", "package.json"],
+    "win": {
+      "target": "nsis",
+      "icon": "../_assets/beatcanvas.ico"
+    }
+  }
+}

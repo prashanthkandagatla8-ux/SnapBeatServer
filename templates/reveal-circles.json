@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "name": "Reveal Circles",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30.0,
+  "music_mode": "any",
+  "animation": "Cut",
+  "axis": "-y",
+  "cover_mode": "zoom",
+  "beats_per_clip": 1,
+  "reveal_tiles": 1,
+  "reveal_order": "random",
+  "reveal_shape": "circle",
+  "min_clip_duration": 0.14,
+  "max_seconds": 30.0,
+  "audio_path": "",
+  "audio_name": "",
+  "audio_start": 0.0,
+  "source_draft": "",
+  "notes": [
+    "The same beat-by-beat reveal in circles instead of boxes. The final beat of each group completes the photo to full frame, so the circles build and then resolve."
+  ],
+  "beat_markers": [],
+  "clips": []
+}

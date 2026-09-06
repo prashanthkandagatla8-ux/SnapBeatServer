@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "name": "Slow Drift",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30.0,
+  "music_mode": "any",
+  "animation": "Drift",
+  "axis": "-y",
+  "cover_mode": "zoom",
+  "beats_per_clip": 4,
+  "reveal_tiles": 0,
+  "reveal_order": "random",
+  "reveal_shape": "box",
+  "min_clip_duration": 0.8,
+  "max_seconds": 30.0,
+  "audio_path": "",
+  "audio_name": "",
+  "audio_start": 0.0,
+  "source_draft": "",
+  "notes": [
+    "A slow glide and gentle zoom, changing photo every fourth beat. For slow or sparse music where fast cutting would feel frantic."
+  ],
+  "beat_markers": [],
+  "clips": []
+}

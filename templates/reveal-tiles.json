@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "name": "Reveal Boxes",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30.0,
+  "music_mode": "any",
+  "animation": "Cut",
+  "axis": "-y",
+  "cover_mode": "zoom",
+  "beats_per_clip": 1,
+  "reveal_tiles": 1,
+  "reveal_order": "random",
+  "reveal_shape": "box",
+  "min_clip_duration": 0.14,
+  "max_seconds": 30.0,
+  "audio_path": "",
+  "audio_name": "",
+  "audio_start": 0.0,
+  "source_draft": "",
+  "notes": [
+    "Each photo arrives in pieces: every quick beat in between uncovers one more box, and the next main beat swaps to a new photo. The number of boxes follows the music, so a photo held over four beats splits into four."
+  ],
+  "beat_markers": [],
+  "clips": []
+}

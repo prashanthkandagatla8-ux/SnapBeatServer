@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "name": "Beat Spin",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30.0,
+  "music_mode": "any",
+  "animation": "Spin",
+  "axis": "-y",
+  "cover_mode": "zoom",
+  "beats_per_clip": 2,
+  "reveal_tiles": 0,
+  "reveal_order": "random",
+  "reveal_shape": "box",
+  "min_clip_duration": 0.25,
+  "max_seconds": 30.0,
+  "audio_path": "",
+  "audio_name": "",
+  "audio_start": 0.0,
+  "source_draft": "",
+  "notes": [
+    "A slow turn through each photo with a gentle zoom. Adds rotation without making the picture hard to read."
+  ],
+  "beat_markers": [],
+  "clips": []
+}
