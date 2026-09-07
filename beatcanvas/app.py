@@ -555,7 +555,9 @@ def render_mobile(
     audio: UploadFile = File(...),
     photos: List[UploadFile] = File(...),
     template: str = Form(None),
-    drop_it: str = Form(None)
+    drop_it: str = Form(None),
+    audio_start: str = Form("0"),
+    frame: str = Form("portrait")
 ):
     import shutil
     import uuid
@@ -588,12 +590,13 @@ def render_mobile(
         "fill": "repeat",
         "analysis": "auto",
         "look": "mix",
-        "frame": "portrait",
+        "frame": frame if frame in ("portrait", "landscape", "square") else "portrait",
         "pace": "medium",
         "intensity": 1.0,
         "cover_mode": "zoom",
         "reveal_shape": "circle",
         "drop_it": drop_it in ("true", "1", "yes"),
+        "audio_start": max(0.0, float(audio_start or 0)),
     }
 
     # Fix: Sanitize template name — strip .json suffix, block path traversal

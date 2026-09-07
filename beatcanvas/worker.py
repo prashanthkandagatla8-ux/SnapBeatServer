@@ -486,6 +486,7 @@ class Worker:
         built = template.with_beats(onsets, duration, strong=strong)
         built.audio_path = str(music)
         built.audio_name = music.stem
+        built.audio_start = float(options.get("audio_start", 0.0))
         described = (f"{detected} beats" if not edited
                      else f"{detected} beats you set by hand")
         built.notes = list(built.notes) + [
