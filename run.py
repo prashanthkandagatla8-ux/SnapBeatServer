@@ -23,9 +23,8 @@ HOST = "0.0.0.0"
 #: the launcher falls back to its usual port.
 PREFERRED_PORT = int(os.environ.get("BEATCANVAS_PORT", "8772"))
 
-#: Electron shows the app in its own window, so opening a browser as well would be a
-#: second, confusing copy of the same thing.
-OPEN_BROWSER = os.environ.get("BEATCANVAS_NO_BROWSER", "") != "1"
+#: Do not open browser automatically unless explicitly requested via --browser or env var.
+OPEN_BROWSER = "--browser" in sys.argv or os.environ.get("BEATCANVAS_OPEN_BROWSER", "") == "1"
 
 LOG_DIR = ROOT / "_logs"
 
@@ -63,6 +62,7 @@ def main() -> int:
     port = (PREFERRED_PORT if os.environ.get("BEATCANVAS_PORT")
             else find_port(PREFERRED_PORT))
     url = f"http://{HOST}:{port}/"
+    browser_url = f"http://127.0.0.1:{port}/"
 
     # pythonw has no console, so output needs somewhere to land.
     if not sys.stdout or not sys.stdout.isatty():
@@ -72,7 +72,7 @@ def main() -> int:
         print(f"\n=== BeatCanvas starting {time.strftime('%Y-%m-%d %H:%M:%S')} -> {url}")
 
     if OPEN_BROWSER:
-        threading.Thread(target=lambda: (time.sleep(1.5), webbrowser.open(url)),
+        threading.Thread(target=lambda: (time.sleep(1.5), webbrowser.open(browser_url)),
                          daemon=True).start()
 
     import uvicorn

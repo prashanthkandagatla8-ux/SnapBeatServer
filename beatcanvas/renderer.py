@@ -20,6 +20,7 @@ from typing import Callable
 
 import cv2
 import numpy as np
+from PIL import Image, ImageDraw, ImageFont
 
 from . import animations, config
 from .photos import PhotoSet
@@ -706,9 +707,116 @@ def _compose_clip(template: Template, photos: PhotoSet, clip: Clip, time_s: floa
     return canvas, state
 
 
+def _parse_hex_color(c: str) -> tuple[int, int, int]:
+    """Parse color string into RGB tuple. Supports 'black', hex '#RRGGBB', or default black."""
+    c = c.strip().lstrip("#")
+    if len(c) == 6:
+        try:
+            return (int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16))
+        except ValueError:
+            pass
+    return (0, 0, 0)
+
+
+def _get_title_font(fontsize: int):
+    for font_name in ("arial.ttf", "Arial.ttf", "DejaVuSans.ttf", "FreeSans.ttf", "Roboto-Medium.ttf"):
+        try:
+            return ImageFont.truetype(font_name, fontsize)
+        except Exception:
+            continue
+    try:
+        return ImageFont.load_default()
+    except Exception:
+        return ImageFont.load_default()
+
+
+def _render_title_card_frame(width: int, height: int, text: str, bg_rgb: tuple[int, int, int]) -> np.ndarray:
+    """Render a solid color title card with centered text (returns BGR uint8 ndarray)."""
+    img = Image.new("RGB", (width, height), color=bg_rgb)
+    draw = ImageDraw.Draw(img)
+    fontsize = max(36, width // 14)
+    font = _get_title_font(fontsize)
+
+    margin = int(width * 0.08)
+    max_w = width - 2 * margin
+    words = text.split()
+    lines: list[str] = []
+    curr: list[str] = []
+    for w in words:
+        test = " ".join(curr + [w])
+        bbox = draw.textbbox((0, 0), test, font=font)
+        if bbox[2] - bbox[0] > max_w and curr:
+            lines.append(" ".join(curr))
+            curr = [w]
+        else:
+            curr.append(w)
+    if curr:
+        lines.append(" ".join(curr))
+
+    lh = int(fontsize * 1.35)
+    total_h = len(lines) * lh
+    sy = (height - total_h) // 2
+
+    for i, line in enumerate(lines):
+        bbox = draw.textbbox((0, 0), line, font=font)
+        lw = bbox[2] - bbox[0]
+        x = (width - lw) // 2
+        y = sy + i * lh
+        draw.text((x + 4, y + 4), line, fill=(0, 0, 0), font=font)
+        draw.text((x, y), line, fill=(255, 225, 77), font=font)
+
+    # Convert RGB to BGR for OpenCV / rawvideo pipe
+    return np.array(img)[:, :, ::-1]
+
+
+def _overlay_title_on_frame(frame_bgr: np.ndarray, text: str, width: int, height: int) -> np.ndarray:
+    """Overlay title text with a semi-transparent dark banner on a BGR video frame."""
+    img = Image.fromarray(frame_bgr[:, :, ::-1])
+    draw = ImageDraw.Draw(img, "RGBA")
+    fontsize = max(36, width // 14)
+    font = _get_title_font(fontsize)
+
+    margin = int(width * 0.08)
+    max_w = width - 2 * margin
+    words = text.split()
+    lines: list[str] = []
+    curr: list[str] = []
+    for w in words:
+        test = " ".join(curr + [w])
+        bbox = draw.textbbox((0, 0), test, font=font)
+        if bbox[2] - bbox[0] > max_w and curr:
+            lines.append(" ".join(curr))
+            curr = [w]
+        else:
+            curr.append(w)
+    if curr:
+        lines.append(" ".join(curr))
+
+    lh = int(fontsize * 1.35)
+    total_h = len(lines) * lh
+    sy = (height - total_h) // 2
+
+    pad = int(fontsize * 0.5)
+    draw.rectangle(
+        [(0, sy - pad), (width, sy + total_h + pad)],
+        fill=(0, 0, 0, 140)
+    )
+
+    for i, line in enumerate(lines):
+        bbox = draw.textbbox((0, 0), line, font=font)
+        lw = bbox[2] - bbox[0]
+        x = (width - lw) // 2
+        y = sy + i * lh
+        draw.text((x + 3, y + 3), line, fill=(0, 0, 0, 255), font=font)
+        draw.text((x, y), line, fill=(255, 225, 77, 255), font=font)
+
+    return np.array(img.convert("RGB"))[:, :, ::-1]
+
+
 def _open_encoder(output: Path, width: int, height: int, fps: float,
                   audio: Path | None, audio_start: float,
-                  duration: float, crf: int) -> subprocess.Popen:
+                  duration: float, crf: int,
+                  audio_delay: float = 0.0) -> subprocess.Popen:
     output.parent.mkdir(parents=True, exist_ok=True)
     command = [
         config.FFMPEG, "-y", "-v", "error",
@@ -719,6 +827,9 @@ def _open_encoder(output: Path, width: int, height: int, fps: float,
     if audio is not None:
         # Trim the music to the template's own span, from wherever the edit started.
         command += ["-ss", f"{max(0.0, audio_start)}", "-i", str(audio)]
+        if audio_delay > 0.001:
+            delay_ms = int(round(audio_delay * 1000))
+            command += ["-af", f"adelay={delay_ms}|{delay_ms}"]
         command += ["-map", "0:v:0", "-map", "1:a:0", "-c:a", "aac", "-b:a", "192k",
                     "-shortest"]
     else:
@@ -741,7 +852,8 @@ def render(template: Template, photos: PhotoSet, output: str | Path,
            scale: float = 1.0, crf: int = 18,
            with_audio: bool = True,
            frame_dir: str | Path | None = None,
-           should_cancel: Callable[[], bool] | None = None) -> RenderResult:
+           should_cancel: Callable[[], bool] | None = None,
+           options: dict | None = None) -> RenderResult:
     """Render the whole template.
 
     ``scale`` renders at a fraction of the template's canvas, which is how previews are
@@ -772,13 +884,33 @@ def render(template: Template, photos: PhotoSet, output: str | Path,
         else:
             warnings.append(f"audio not found, rendering silent: {candidate}")
 
-    frames = max(1, int(round(template.duration * template.fps)))
+    # Title card configuration
+    title_text = (options.get("title_text", "") if options else "").strip()
+    title_bg = (options.get("title_bg", "black") if options else "black").strip()
+    title_duration = float(options.get("title_duration", 2)) if options else 2.0
+
+    is_solid_title = bool(title_text and title_bg != "video")
+    is_overlay_title = bool(title_text and title_bg == "video")
+
+    slide_frames = max(1, int(round(template.duration * template.fps)))
+    title_frames = max(1, int(round(title_duration * template.fps))) if is_solid_title else 0
+    total_frames = slide_frames + title_frames
+
+    total_duration = template.duration + (title_frames / template.fps if is_solid_title else 0.0)
+    audio_delay = title_frames / template.fps if is_solid_title else 0.0
+
+    title_card_bgr = (
+        _render_title_card_frame(width, height, title_text, _parse_hex_color(title_bg))
+        if is_solid_title else None
+    )
+
     frame_folder = Path(frame_dir) if frame_dir else None
     if frame_folder:
         frame_folder.mkdir(parents=True, exist_ok=True)
 
     encoder = _open_encoder(output, width, height, template.fps, audio,
-                            template.audio_start, template.duration, crf)
+                            template.audio_start, total_duration, crf,
+                            audio_delay=audio_delay)
 
     canvas = np.zeros((height, width, 3), dtype=np.uint8)
     started = time.perf_counter()
@@ -786,18 +918,26 @@ def render(template: Template, photos: PhotoSet, output: str | Path,
 
     try:
         assert encoder.stdin is not None
-        for index in range(frames):
+        for index in range(total_frames):
             if should_cancel and should_cancel():
                 warnings.append(f"cancelled after {written} frames")
                 break
-            time_s = index / template.fps
-            frame = render_frame(working, photo_set, time_s, canvas)
+
+            if is_solid_title and index < title_frames:
+                frame = title_card_bgr
+            else:
+                slide_index = index - title_frames if is_solid_title else index
+                slide_time_s = slide_index / template.fps
+                frame = render_frame(working, photo_set, slide_time_s, canvas)
+                if is_overlay_title and slide_time_s < title_duration:
+                    frame = _overlay_title_on_frame(frame, title_text, width, height)
+
             encoder.stdin.write(frame.tobytes())
             if frame_folder:
                 cv2.imwrite(str(frame_folder / f"frame_{index:05d}.png"), frame)
             written += 1
-            if progress and (index % 5 == 0 or index == frames - 1):
-                progress(index + 1, frames, f"frame {index}")
+            if progress and (index % 5 == 0 or index == total_frames - 1):
+                progress(index + 1, total_frames, f"frame {index}")
     finally:
         if encoder.stdin:
             try:
