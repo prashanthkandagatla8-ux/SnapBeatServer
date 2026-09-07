@@ -293,14 +293,13 @@ class Worker:
         of 5 micro-clips (0.06s each) cycling through different photos, followed by
         a "slam" clip with Punch Cut animation at high intensity.
         """
-        import librosa
-
         music = Path(options.get("music_path", ""))
         if not music.exists() or not template.clips:
             return template
 
         # Load audio and compute a low-frequency onset envelope for bass detection
         try:
+            import librosa
             y, sr = librosa.load(str(music), sr=22050, mono=True,
                                  duration=template.duration + 2.0)
             # Isolate bass frequencies (< 150 Hz) using a short-time FFT
