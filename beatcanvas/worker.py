@@ -533,6 +533,20 @@ class Worker:
                               stage="cancelled", progress=0.0)
             return
 
+        # -- Apply title card if requested --
+        title_text = options.get("title_text", "")
+        if title_text and target.exists():
+            self.store.update(job.id, stage="adding title card...")
+            try:
+                titled = self._apply_title_card(
+                    target, title_text, options, template.width, template.height
+                )
+                if titled and titled.exists():
+                    target = titled
+            except Exception as exc:
+                # Title card is non-critical — log and continue
+                pass
+
         self.store.update(
             job.id, status=store.STATUS_DONE, stage="finished", progress=1.0,
             result={
@@ -550,4 +564,90 @@ class Worker:
                 "warnings": result.warnings,
             },
         )
+
+    # -- Title card rendering ------------------------------------------------
+
+    def _apply_title_card(
+        self, video_path: Path, title_text: str, options: dict,
+        width: int, height: int,
+    ) -> Path | None:
+        """Add a title card to the rendered video using ffmpeg.
+
+        Modes:
+          - 'black': prepend a solid black card with text
+          - '#RRGGBB': prepend a solid colored card with text
+          - 'video': overlay text on the first N seconds of the video
+        """
+        import subprocess
+
+        title_bg = options.get("title_bg", "black")
+        duration = options.get("title_duration", 2)
+        output = video_path.with_name(f"{video_path.stem}_titled.mp4")
+
+        # Escape special chars for ffmpeg drawtext
+        safe_text = title_text.replace("'", "\\'").replace(":", "\\:")
+
+        if title_bg == "video":
+            # Overlay mode: draw text on the first N seconds of the video
+            cmd = [
+                config.FFMPEG, "-y", "-i", str(video_path),
+                "-vf", (
+                    f"drawtext=text='{safe_text}'"
+                    f":fontsize={max(40, width // 18)}"
+                    f":fontcolor=white:borderw=3:bordercolor=black"
+                    f":x=(w-text_w)/2:y=(h-text_h)/2"
+                    f":enable='lt(t,{duration})'"
+                ),
+                "-c:a", "copy",
+                "-preset", "fast",
+                str(output),
+            ]
+            subprocess.run(cmd, check=True, capture_output=True, timeout=120)
+        else:
+            # Prepend mode: create a title card then concatenate
+            bg_color = "black" if title_bg == "black" else title_bg
+            title_clip = video_path.with_name(f"{video_path.stem}_title_clip.mp4")
+            concat_list = video_path.with_name(f"{video_path.stem}_concat.txt")
+
+            # Generate title card clip (solid color + centered text)
+            cmd_title = [
+                config.FFMPEG, "-y",
+                "-f", "lavfi",
+                "-i", f"color=c={bg_color}:s={width}x{height}:d={duration}:r=30",
+                "-vf", (
+                    f"drawtext=text='{safe_text}'"
+                    f":fontsize={max(48, width // 15)}"
+                    f":fontcolor=white:borderw=2:bordercolor=black@0.5"
+                    f":x=(w-text_w)/2:y=(h-text_h)/2"
+                ),
+                "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
+                "-an",
+                str(title_clip),
+            ]
+            subprocess.run(cmd_title, check=True, capture_output=True, timeout=60)
+
+            # Concatenate title + main video
+            with open(concat_list, "w") as f:
+                f.write(f"file '{title_clip}'\n")
+                f.write(f"file '{video_path}'\n")
+
+            cmd_concat = [
+                config.FFMPEG, "-y",
+                "-f", "concat", "-safe", "0", "-i", str(concat_list),
+                "-c", "copy",
+                str(output),
+            ]
+            subprocess.run(cmd_concat, check=True, capture_output=True, timeout=120)
+
+            # Clean up temp files
+            title_clip.unlink(missing_ok=True)
+            concat_list.unlink(missing_ok=True)
+
+        # Replace original with titled version
+        if output.exists():
+            video_path.unlink(missing_ok=True)
+            output.rename(video_path)
+            return video_path
+
+        return None
 

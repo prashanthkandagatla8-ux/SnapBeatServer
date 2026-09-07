@@ -557,7 +557,10 @@ def render_mobile(
     template: str = Form(None),
     drop_it: str = Form(None),
     audio_start: str = Form("0"),
-    frame: str = Form("portrait")
+    frame: str = Form("portrait"),
+    title_text: str = Form(""),
+    title_bg: str = Form("black"),
+    title_duration: str = Form("2")
 ):
     import shutil
     import uuid
@@ -597,6 +600,9 @@ def render_mobile(
         "reveal_shape": "circle",
         "drop_it": drop_it in ("true", "1", "yes"),
         "audio_start": max(0.0, float(audio_start or 0)),
+        "title_text": (title_text or "").strip(),
+        "title_bg": title_bg if title_bg in ("black", "video") or title_bg.startswith("#") else "black",
+        "title_duration": max(1, min(5, int(title_duration or 2))),
     }
 
     # Fix: Sanitize template name — strip .json suffix, block path traversal
