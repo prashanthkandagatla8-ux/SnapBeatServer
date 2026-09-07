@@ -202,3 +202,12 @@ class JobStore:
                 "SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
         return self._row(row) if row else None
 
+    def count_active(self) -> int:
+        """Count jobs that are currently queued or rendering (for load balancing)."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM jobs WHERE status IN (?, ?)",
+                (STATUS_QUEUED, STATUS_RENDERING),
+            ).fetchone()
+        return row[0] if row else 0
+

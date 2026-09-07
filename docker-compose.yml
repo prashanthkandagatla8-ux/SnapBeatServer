@@ -1,0 +1,48 @@
+version: "3.8"
+
+services:
+  # API Gateway — single entry point for the Android app
+  gateway:
+    build: .
+    command: python gateway.py
+    ports:
+      - "80:80"
+    environment:
+      - SNAPBEAT_BACKENDS=http://worker1:8772,http://worker2:8772
+      - SNAPBEAT_GATEWAY_PORT=80
+      # Uncomment to enable serverless fallback:
+      # - SNAPBEAT_SERVERLESS_URL=https://snapbeat-xxx-uc.a.run.app
+    depends_on:
+      - worker1
+      - worker2
+    restart: unless-stopped
+
+  # Render Worker 1
+  worker1:
+    build: .
+    command: python run.py
+    environment:
+      - BEATCANVAS_PORT=8772
+      - BEATCANVAS_NO_BROWSER=1
+      - BEATCANVAS_MAX_WORKERS=4
+      - BEATCANVAS_OUTPUT_MAX_AGE=3600
+    volumes:
+      - worker1_data:/app/output
+    restart: unless-stopped
+
+  # Render Worker 2
+  worker2:
+    build: .
+    command: python run.py
+    environment:
+      - BEATCANVAS_PORT=8772
+      - BEATCANVAS_NO_BROWSER=1
+      - BEATCANVAS_MAX_WORKERS=4
+      - BEATCANVAS_OUTPUT_MAX_AGE=3600
+    volumes:
+      - worker2_data:/app/output
+    restart: unless-stopped
+
+volumes:
+  worker1_data:
+  worker2_data:

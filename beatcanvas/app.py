@@ -18,7 +18,7 @@ from pathlib import Path
 import cv2
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import (
-    HTMLResponse, JSONResponse, RedirectResponse, Response,
+    FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response,
 )
 from fastapi.templating import Jinja2Templates
 
@@ -630,6 +630,39 @@ def render_download(job_id: int):
     return FileResponse(job.result.get("video"), media_type="video/mp4", filename=f"snapbeat_{job_id}.mp4")
 
 
+# -- Health endpoint (used by gateway for load balancing) --------------------
+
+@app.get("/api/health")
+def api_health():
+    """Report server health and current load for gateway routing."""
+    import time
+    active = job_store.count_active()
+    return {
+        "status": "ok",
+        "active_jobs": active,
+        "max_workers": config.MAX_WORKERS,
+        "available": max(0, config.MAX_WORKERS - active),
+        "timestamp": time.time(),
+    }
 
 
+# -- Auto-cleanup of old rendered videos ------------------------------------
+
+import threading
+import time as _time
+
+def _cleanup_old_outputs():
+    """Delete rendered MP4s older than OUTPUT_MAX_AGE_SECONDS to prevent disk fill."""
+    while True:
+        _time.sleep(1800)  # run every 30 minutes
+        try:
+            cutoff = _time.time() - config.OUTPUT_MAX_AGE_SECONDS
+            for f in config.OUTPUT_DIR.glob("*.mp4"):
+                if f.stat().st_mtime < cutoff:
+                    f.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+_cleanup_thread = threading.Thread(target=_cleanup_old_outputs, daemon=True)
+_cleanup_thread.start()
 
