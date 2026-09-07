@@ -557,10 +557,15 @@ def render_mobile(
     template: str = Form(None),
     drop_it: str = Form(None),
     audio_start: str = Form("0"),
+    audio_end: str = Form("0"),
+    full_track: str = Form("true"),
     frame: str = Form("portrait"),
     title_text: str = Form(""),
     title_bg: str = Form("black"),
-    title_duration: str = Form("2")
+    title_duration: str = Form("2"),
+    title_font: str = Form("impact"),
+    title_style: str = Form("classic"),
+    title_frame: str = Form("none")
 ):
     import shutil
     import uuid
@@ -585,7 +590,12 @@ def render_mobile(
         with open(p_path, "wb") as f:
             shutil.copyfileobj(p.file, f)
         photo_paths.append(str(p_path.resolve()))
-        
+
+    start_sec = max(0.0, float(audio_start or 0))
+    end_sec = max(0.0, float(audio_end or 0))
+    is_full = full_track.lower() in ("true", "1", "yes") or end_sec <= 0 or end_sec <= start_sec
+    max_sec = 0.0 if is_full else max(5.0, end_sec - start_sec)
+
     options = {
         "photo_folder": str(photos_dir.resolve()),
         "photo_order": photo_paths,
@@ -599,10 +609,15 @@ def render_mobile(
         "cover_mode": "zoom",
         "reveal_shape": "circle",
         "drop_it": drop_it in ("true", "1", "yes"),
-        "audio_start": max(0.0, float(audio_start or 0)),
+        "audio_start": start_sec,
+        "audio_end": end_sec,
+        "max_seconds": max_sec,
         "title_text": (title_text or "").strip(),
         "title_bg": title_bg if title_bg in ("black", "video") or title_bg.startswith("#") else "black",
         "title_duration": max(1, min(5, int(title_duration or 2))),
+        "title_font": (title_font or "impact").lower().strip(),
+        "title_style": (title_style or "classic").lower().strip(),
+        "title_frame": (title_frame or "none").lower().strip(),
     }
 
     # Fix: Sanitize template name — strip .json suffix, block path traversal

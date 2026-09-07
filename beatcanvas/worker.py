@@ -441,8 +441,9 @@ class Worker:
         # than a missing value, so it has to be distinguished from absent explicitly.
         # Treating 0 as falsy here is what previously capped every render at 30 seconds.
         requested = options.get("max_seconds")
-        wanted = (float(requested) if requested is not None
-                  else float(template.max_seconds))
+        audio_start = float(options.get("audio_start", 0.0))
+        # 0.0 means full song. Default to 0.0 (full song) instead of capping at 30 seconds
+        wanted = float(requested) if requested is not None else 0.0
         template.max_seconds = wanted
 
         # Every detected beat should trigger a template action.
@@ -468,10 +469,11 @@ class Worker:
             tempo = 0.0
             detected = len(onsets)
         else:
-            # Analyse a little past the intended length so the last clip has a boundary.
+            # Analyse starting from audio_start to end (or to wanted duration)
             analysis = beats.analyse(
                 music,
-                duration=(wanted + 6.0) if wanted else None,
+                duration=(wanted + 6.0) if wanted > 0.0 else None,
+                start=audio_start,
                 sensitivity=float(options.get("sensitivity", 1.0)),
                 min_gap=max(0.05, template.min_clip_duration * 0.45),
                 strong_ratio=float(options.get("strong_ratio", 0.4)),

@@ -85,9 +85,12 @@ class BeatAnalysis:
         return [round(float(chunk.max()), 4) for chunk in chunks if len(chunk)]
 
 
-def load_audio(path: str | Path, duration: float | None = None) -> np.ndarray:
+def load_audio(path: str | Path, duration: float | None = None, start: float = 0.0) -> np.ndarray:
     """Decode any audio or video file to mono float samples via ffmpeg."""
-    command = [config.FFMPEG, "-v", "error", "-i", str(path)]
+    command = [config.FFMPEG, "-v", "error"]
+    if start > 0.01:
+        command += ["-ss", f"{start:.3f}"]
+    command += ["-i", str(path)]
     if duration:
         command += ["-t", f"{duration:.3f}"]
     command += ["-ac", "1", "-ar", str(SAMPLE_RATE), "-f", "f32le", "-"]
@@ -271,10 +274,11 @@ def classify(onsets: list[float], strengths: list[float], tempo_bpm: float,
 
 
 def analyse(path: str | Path, duration: float | None = None,
+            start: float = 0.0,
             sensitivity: float = 1.0, min_gap: float = 0.06,
             strong_ratio: float = 0.4) -> BeatAnalysis:
     """Full analysis of one audio file."""
-    samples = load_audio(path, duration)
+    samples = load_audio(path, duration, start=start)
     flux, times = onset_envelope(samples)
     onsets, strengths = pick_peaks(flux, times, sensitivity, min_gap)
     tempo = estimate_tempo(flux)
