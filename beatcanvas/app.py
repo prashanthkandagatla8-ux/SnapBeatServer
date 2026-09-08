@@ -566,7 +566,8 @@ def render_mobile(
     title_font: str = Form("impact"),
     title_style: str = Form("classic"),
     title_frame: str = Form("none"),
-    quality: str = Form("fast")
+    quality: str = Form("fast"),
+    auto_arrange: str = Form("auto")
 ):
     import shutil
     import uuid
@@ -592,6 +593,19 @@ def render_mobile(
             shutil.copyfileobj(p.file, f)
         photo_paths.append(str(p_path.resolve()))
 
+    # Smart Photo Arrangement (Gemini Multimodal AI + Computer Vision Fallback)
+    arranged_photos = photo_paths
+    if (auto_arrange or "auto").lower() in ("auto", "true", "1", "yes"):
+        try:
+            from . import smart_arranger
+            arranged_photos = smart_arranger.auto_arrange_photos(
+                photo_paths,
+                audio_path=str(audio_path.resolve())
+            )
+        except Exception as e:
+            logger.warning(f"Auto-arrange execution error: {e}")
+            arranged_photos = photo_paths
+
     start_sec = max(0.0, float(audio_start or 0))
     end_sec = max(0.0, float(audio_end or 0))
     is_full = full_track.lower() in ("true", "1", "yes") or end_sec <= 0 or end_sec <= start_sec
@@ -599,7 +613,8 @@ def render_mobile(
 
     options = {
         "photo_folder": str(photos_dir.resolve()),
-        "photo_order": photo_paths,
+        "photo_order": arranged_photos,
+        "auto_arrange": (auto_arrange or "auto").lower() in ("auto", "true", "1", "yes"),
         "music_path": str(audio_path.resolve()),
         "fill": "repeat",
         "analysis": "auto",
