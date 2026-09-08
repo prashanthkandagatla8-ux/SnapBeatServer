@@ -21,7 +21,7 @@ HOST = "0.0.0.0"
 #: The Electron shell picks a free port itself and passes it in, so that the window it
 #: opens and the server it started cannot disagree about where the app is. Run on its own,
 #: the launcher falls back to its usual port.
-PREFERRED_PORT = int(os.environ.get("BEATCANVAS_PORT", "8772"))
+PREFERRED_PORT = int(os.environ.get("PORT", os.environ.get("BEATCANVAS_PORT", "8772")))
 
 #: Do not open browser automatically unless explicitly requested via --browser or env var.
 OPEN_BROWSER = "--browser" in sys.argv or os.environ.get("BEATCANVAS_OPEN_BROWSER", "") == "1"

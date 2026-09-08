@@ -1,0 +1,16 @@
+﻿.git
+.cache
+__pycache__
+*.pyc
+_logs
+_dropped
+output
+jobs
+jobs.db
+*.mp4
+*.wav
+*.mp3
+desktop
+docs
+tools
+*.log

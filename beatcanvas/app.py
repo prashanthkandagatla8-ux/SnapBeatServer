@@ -10,6 +10,7 @@ finishes in well under a minute, and the result is revealed in Explorer.
 from __future__ import annotations
 
 import io
+import os
 import subprocess
 import sys
 from contextlib import asynccontextmanager
@@ -552,6 +553,7 @@ def sanitize_filename(name: str) -> str:
 
 @app.post("/api/render/mobile")
 def render_mobile(
+    request: Request,
     audio: UploadFile = File(...),
     photos: List[UploadFile] = File(...),
     template: str = Form(None),
@@ -571,6 +573,13 @@ def render_mobile(
     watermark: str = Form("true"),
     render_type: str = Form("free_queue")
 ):
+    # Security check: If SNAPBEAT_INTERNAL_SECRET is configured, require authorization header
+    internal_secret = os.environ.get("SNAPBEAT_INTERNAL_SECRET", "").strip()
+    if internal_secret:
+        client_auth = request.headers.get("X-Serverless-Auth", "").strip()
+        if client_auth != internal_secret:
+            raise HTTPException(status_code=401, detail="Unauthorized: Serverless render requires verified access.")
+
     import shutil
     import uuid
 
