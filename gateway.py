@@ -172,26 +172,35 @@ async def render_mobile(request: Request):
     body = await request.body()
     content_type = request.headers.get("content-type", "")
 
-    # Inspect multipart body for render_type
+    # Inspect multipart body for render_type and credits_used
     is_instant = False
+    credits_used = 0
     match_render_type = re.search(rb'name=[\"\']render_type[\"\']\r?\n\r?\n([^\r\n]+)', body[:4096])
     if match_render_type:
         val = match_render_type.group(1).decode("utf-8", errors="ignore").strip().lower()
         if val == "instant":
             is_instant = True
 
+    match_credits = re.search(rb'name=[\"\']credits_used[\"\']\r?\n\r?\n([^\r\n]+)', body[:4096])
+    if match_credits:
+        try:
+            credits_used = int(match_credits.group(1).decode("utf-8", errors="ignore").strip())
+        except ValueError:
+            credits_used = 0
+
     backend = None
     prefix = "0"
     headers_to_send = {"content-type": content_type}
 
-    if is_instant and SERVERLESS_URL:
+    # Only route to Serverless Cloud Run if it is explicitly an instant render WITH paid credits
+    if is_instant and credits_used > 0 and SERVERLESS_URL:
         # Route to Serverless Cloud Run with security secret
         backend = SERVERLESS_URL
         prefix = "s"
         if INTERNAL_SECRET:
             headers_to_send["X-Serverless-Auth"] = INTERNAL_SECRET
     else:
-        # Route to VPS backend queue
+        # Route to VPS backend queue (Free Queue or 0 credits always stay on VPS)
         backend = _pick_backend()
         if backend is None:
             if BACKENDS:
