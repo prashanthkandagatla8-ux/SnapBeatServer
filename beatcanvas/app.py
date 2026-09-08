@@ -16,7 +16,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import cv2
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import (
     FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response,
 )
@@ -565,7 +565,8 @@ def render_mobile(
     title_duration: str = Form("2"),
     title_font: str = Form("impact"),
     title_style: str = Form("classic"),
-    title_frame: str = Form("none")
+    title_frame: str = Form("none"),
+    quality: str = Form("fast")
 ):
     import shutil
     import uuid
@@ -618,6 +619,7 @@ def render_mobile(
         "title_font": (title_font or "impact").lower().strip(),
         "title_style": (title_style or "classic").lower().strip(),
         "title_frame": (title_frame or "none").lower().strip(),
+        "quality": (quality or "fast").lower().strip(),
     }
 
     # Fix: Sanitize template name — strip .json suffix, block path traversal
@@ -647,11 +649,54 @@ def render_status(job_id: int):
     }
 
 @app.get("/api/render/download/{job_id}")
-def render_download(job_id: int):
+def render_download(job_id: int, delete_after: bool = False, background_tasks: BackgroundTasks = BackgroundTasks()):
+    import shutil
     job = job_store.get(job_id)
     if not job or job.status != store.STATUS_DONE:
         raise HTTPException(status_code=400, detail="job not done")
-    return FileResponse(job.result.get("video"), media_type="video/mp4", filename=f"snapbeat_{job_id}.mp4")
+    video_file = Path(job.result.get("video"))
+    if not video_file.exists():
+        raise HTTPException(status_code=404, detail="video file no longer on server")
+
+    if delete_after:
+        def _deferred_cleanup():
+            try:
+                # Clean up rendered video
+                video_file.unlink(missing_ok=True)
+                # Clean up uploaded raw input folder
+                if job.name and job.name.startswith("mobile_"):
+                    dropped_dir = config.ROOT / "_dropped" / job.name.replace("mobile_", "")
+                    if dropped_dir.exists():
+                        shutil.rmtree(dropped_dir, ignore_errors=True)
+            except Exception:
+                pass
+        background_tasks.add_task(_deferred_cleanup)
+
+    return FileResponse(str(video_file), media_type="video/mp4", filename=f"snapbeat_{job_id}.mp4")
+
+
+@app.post("/api/render/cleanup/{job_id}")
+def render_cleanup(job_id: int):
+    """Explicitly delete a completed or cancelled render and its inputs from server."""
+    import shutil
+    job = job_store.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="job not found")
+    
+    cleaned = []
+    if job.result and job.result.get("video"):
+        p = Path(job.result.get("video"))
+        if p.exists():
+            p.unlink(missing_ok=True)
+            cleaned.append("video")
+            
+    if job.name and job.name.startswith("mobile_"):
+        dropped_dir = config.ROOT / "_dropped" / job.name.replace("mobile_", "")
+        if dropped_dir.exists():
+            shutil.rmtree(dropped_dir, ignore_errors=True)
+            cleaned.append("inputs")
+            
+    return {"status": "ok", "cleaned": cleaned}
 
 
 # -- Health endpoint (used by gateway for load balancing) --------------------

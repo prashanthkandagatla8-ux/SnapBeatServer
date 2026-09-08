@@ -971,6 +971,13 @@ def render(template: Template, photos: PhotoSet, output: str | Path,
     warnings: list[str] = []
     output = Path(output)
 
+    # Determine video encoding quality/bitrate
+    quality = (options.get("quality", "fast") if options else "fast").lower().strip()
+    if quality == "master":
+        crf = 18
+    else:
+        crf = 23  # Optimized fast download (~4-6 MB)
+
     width = max(2, int(round(template.width * scale)) // 2 * 2)
     height = max(2, int(round(template.height * scale)) // 2 * 2)
 
