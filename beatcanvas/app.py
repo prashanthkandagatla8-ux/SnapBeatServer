@@ -567,7 +567,9 @@ def render_mobile(
     title_style: str = Form("classic"),
     title_frame: str = Form("none"),
     quality: str = Form("fast"),
-    auto_arrange: str = Form("auto")
+    auto_arrange: str = Form("auto"),
+    watermark: str = Form("true"),
+    render_type: str = Form("free_queue")
 ):
     import shutil
     import uuid
@@ -635,6 +637,8 @@ def render_mobile(
         "title_style": (title_style or "classic").lower().strip(),
         "title_frame": (title_frame or "none").lower().strip(),
         "quality": (quality or "fast").lower().strip(),
+        "watermark": (watermark or "true").lower() in ("true", "1", "yes"),
+        "render_type": (render_type or "free_queue").lower().strip(),
     }
 
     # Fix: Sanitize template name — strip .json suffix, block path traversal

@@ -921,6 +921,40 @@ def _overlay_title_on_frame(frame_bgr: np.ndarray, text: str, width: int, height
     return np.array(img.convert("RGB"))[:, :, ::-1]
 
 
+def _overlay_watermark(frame_bgr: np.ndarray, width: int, height: int) -> np.ndarray:
+    """Overlay subtle semi-transparent 'Made with SnapBeat' watermark badge in the bottom right corner."""
+    text = "Made with SnapBeat"
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    scale = max(0.5, width / 1600.0)
+    thickness = max(1, int(round(scale * 2.0)))
+
+    (tw, th), baseline = cv2.getTextSize(text, font, scale, thickness)
+
+    margin_x = int(width * 0.04)
+    margin_y = int(height * 0.04)
+
+    x = width - tw - margin_x
+    y = height - margin_y
+
+    # Translucent pill background box (alpha 0.45)
+    pad_x = int(14 * scale)
+    pad_y = int(10 * scale)
+    box_x1 = max(0, x - pad_x)
+    box_y1 = max(0, y - th - pad_y)
+    box_x2 = min(width - 1, x + tw + pad_x)
+    box_y2 = min(height - 1, y + pad_y)
+
+    sub_img = frame_bgr[box_y1:box_y2, box_x1:box_x2]
+    black_rect = np.zeros_like(sub_img)
+    cv2.addWeighted(black_rect, 0.45, sub_img, 0.55, 0, sub_img)
+    frame_bgr[box_y1:box_y2, box_x1:box_x2] = sub_img
+
+    # Anti-aliased white text with subtle shadow
+    cv2.putText(frame_bgr, text, (x + 1, y + 1), font, scale, (0, 0, 0), thickness + 1, cv2.LINE_AA)
+    cv2.putText(frame_bgr, text, (x, y), font, scale, (245, 245, 250), thickness, cv2.LINE_AA)
+    return frame_bgr
+
+
 def _open_encoder(output: Path, width: int, height: int, fps: float,
                   audio: Path | None, audio_start: float,
                   duration: float, crf: int,
@@ -1009,6 +1043,7 @@ def render(template: Template, photos: PhotoSet, output: str | Path,
 
     is_solid_title = bool(title_text and title_bg != "video")
     is_overlay_title = bool(title_text and title_bg == "video")
+    apply_watermark = bool(options.get("watermark", True)) if options else True
 
     slide_frames = max(1, int(round(template.duration * template.fps)))
     title_frames = max(1, int(round(title_duration * template.fps))) if is_solid_title else 0
@@ -1055,6 +1090,9 @@ def render(template: Template, photos: PhotoSet, output: str | Path,
                         frame, title_text, width, height,
                         font_family=title_font, style=title_style, frame_style=title_frame
                     )
+
+            if apply_watermark:
+                frame = _overlay_watermark(frame, width, height)
 
             encoder.stdin.write(frame.tobytes())
             if frame_folder:
