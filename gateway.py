@@ -41,7 +41,11 @@ BACKENDS = [
     os.environ.get("SNAPBEAT_BACKENDS", "http://127.0.0.1:8772").split(",")
     if url.strip()
 ]
-SERVERLESS_URL = os.environ.get("SNAPBEAT_SERVERLESS_URL", "").strip().rstrip("/")
+# Default serverless to local VPS backend so both paid and free hits run on the VPS during testing
+DEFAULT_BACKEND = BACKENDS[0] if BACKENDS else "http://127.0.0.1:8772"
+SERVERLESS_URL = os.environ.get("SNAPBEAT_SERVERLESS_URL", DEFAULT_BACKEND).strip().rstrip("/")
+if not SERVERLESS_URL:
+    SERVERLESS_URL = DEFAULT_BACKEND
 INTERNAL_SECRET = os.environ.get("SNAPBEAT_INTERNAL_SECRET", "").strip()
 PORT = int(os.environ.get("PORT", os.environ.get("SNAPBEAT_GATEWAY_PORT", "8000")))
 HEALTH_INTERVAL = 10  # seconds between health checks
@@ -126,9 +130,8 @@ def _resolve_job_id(composite_id: str) -> tuple[str, int]:
         raise HTTPException(status_code=400, detail="invalid job ID format")
 
     if prefix == "s":
-        if not SERVERLESS_URL:
-            raise HTTPException(status_code=400, detail="serverless not configured")
-        return SERVERLESS_URL, local_id
+        target = SERVERLESS_URL if SERVERLESS_URL else DEFAULT_BACKEND
+        return target, local_id
     else:
         try:
             idx = int(prefix)
