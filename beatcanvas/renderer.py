@@ -922,36 +922,66 @@ def _overlay_title_on_frame(frame_bgr: np.ndarray, text: str, width: int, height
 
 
 def _overlay_watermark(frame_bgr: np.ndarray, width: int, height: int) -> np.ndarray:
-    """Overlay subtle semi-transparent 'Made with SnapBeat' watermark badge in the bottom right corner."""
-    text = "Made with SnapBeat"
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    scale = max(0.5, width / 1600.0)
-    thickness = max(1, int(round(scale * 2.0)))
+    """Overlay prominent branded 'SNAPBEAT - Free Version' watermark badge in the bottom right corner."""
+    title_text = "SNAPBEAT"
+    sub_text = "Made with Free Version"
 
-    (tw, th), baseline = cv2.getTextSize(text, font, scale, thickness)
+    font_title = cv2.FONT_HERSHEY_DUPLEX
+    font_sub = cv2.FONT_HERSHEY_SIMPLEX
 
-    margin_x = int(width * 0.04)
-    margin_y = int(height * 0.04)
+    # Prominent responsive scaling based on frame width
+    scale_title = max(0.85, width / 950.0)
+    scale_sub = scale_title * 0.60
 
-    x = width - tw - margin_x
-    y = height - margin_y
+    thick_title = max(2, int(round(scale_title * 2.2)))
+    thick_sub = max(1, int(round(scale_sub * 1.8)))
 
-    # Translucent pill background box (alpha 0.45)
-    pad_x = int(14 * scale)
-    pad_y = int(10 * scale)
-    box_x1 = max(0, x - pad_x)
-    box_y1 = max(0, y - th - pad_y)
-    box_x2 = min(width - 1, x + tw + pad_x)
-    box_y2 = min(height - 1, y + pad_y)
+    (tw1, th1), _ = cv2.getTextSize(title_text, font_title, scale_title, thick_title)
+    (tw2, th2), _ = cv2.getTextSize(sub_text, font_sub, scale_sub, thick_sub)
 
-    sub_img = frame_bgr[box_y1:box_y2, box_x1:box_x2]
-    black_rect = np.zeros_like(sub_img)
-    cv2.addWeighted(black_rect, 0.45, sub_img, 0.55, 0, sub_img)
-    frame_bgr[box_y1:box_y2, box_x1:box_x2] = sub_img
+    tw = max(tw1, tw2)
+    spacing = int(8 * scale_title)
+    total_h = th1 + spacing + th2
 
-    # Anti-aliased white text with subtle shadow
-    cv2.putText(frame_bgr, text, (x + 1, y + 1), font, scale, (0, 0, 0), thickness + 1, cv2.LINE_AA)
-    cv2.putText(frame_bgr, text, (x, y), font, scale, (245, 245, 250), thickness, cv2.LINE_AA)
+    margin_x = int(width * 0.045)
+    margin_y = int(height * 0.045)
+
+    pad_x = int(20 * scale_title)
+    pad_y = int(14 * scale_title)
+
+    box_w = tw + 2 * pad_x
+    box_h = total_h + 2 * pad_y
+
+    x2 = width - margin_x
+    x1 = max(0, x2 - box_w)
+    y2 = height - margin_y
+    y1 = max(0, y2 - box_h)
+
+    # Dark background pill with 82% opacity and gold border for clear, prominent contrast
+    sub_img = frame_bgr[y1:y2, x1:x2]
+    if sub_img.shape[0] > 0 and sub_img.shape[1] > 0:
+        dark_card = np.full_like(sub_img, 16)  # dark slate #101010
+        cv2.addWeighted(dark_card, 0.82, sub_img, 0.18, 0, sub_img)
+
+        # Crisp yellow/gold border (BGR: 77, 225, 255)
+        cv2.rectangle(sub_img, (0, 0), (sub_img.shape[1] - 1, sub_img.shape[0] - 1), (77, 225, 255), 2, cv2.LINE_AA)
+        frame_bgr[y1:y2, x1:x2] = sub_img
+
+    # Centered text coordinates
+    tx1 = x1 + pad_x + (tw - tw1) // 2
+    ty1 = y1 + pad_y + th1
+
+    tx2 = x1 + pad_x + (tw - tw2) // 2
+    ty2 = ty1 + spacing + th2
+
+    # Draw Title (Bold Yellow/Gold with dark drop shadow)
+    cv2.putText(frame_bgr, title_text, (tx1 + 2, ty1 + 2), font_title, scale_title, (0, 0, 0), thick_title + 2, cv2.LINE_AA)
+    cv2.putText(frame_bgr, title_text, (tx1, ty1), font_title, scale_title, (77, 225, 255), thick_title, cv2.LINE_AA)
+
+    # Draw Subtitle (Crisp White with shadow)
+    cv2.putText(frame_bgr, sub_text, (tx2 + 2, ty2 + 2), font_sub, scale_sub, (0, 0, 0), thick_sub + 2, cv2.LINE_AA)
+    cv2.putText(frame_bgr, sub_text, (tx2, ty2), font_sub, scale_sub, (245, 245, 250), thick_sub, cv2.LINE_AA)
+
     return frame_bgr
 
 
