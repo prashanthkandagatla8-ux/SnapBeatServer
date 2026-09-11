@@ -504,7 +504,7 @@ class Worker:
 
         out_dir = Path(options.get("output_dir") or config.OUTPUT_DIR)
         out_dir.mkdir(parents=True, exist_ok=True)
-        target = out_dir / f"{job.name}.mp4"
+        target = out_dir / f"{job.name}_{job.id}.mp4"
 
         self.store.update(job.id, status=store.STATUS_RENDERING,
                           stage="rendering", progress=0.0, error="",

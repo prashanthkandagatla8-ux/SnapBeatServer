@@ -10,9 +10,12 @@ finishes in well under a minute, and the result is revealed in Explorer.
 from __future__ import annotations
 
 import io
+import logging
 import os
 import subprocess
 import sys
+
+logger = logging.getLogger("beatcanvas.app")
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -443,7 +446,7 @@ def clear_drops():
 
 
 @app.post("/api/browse")
-def browse(kind: str = Form("folder"), start: str = Form("")):
+def browse(request: Request, kind: str = Form("folder"), start: str = Form("")):
     client_ip = request.client.host if request and request.client else ""
     if client_ip not in ("127.0.0.1", "::1", "localhost"):
         raise HTTPException(status_code=403, detail="Endpoint restricted to localhost")
@@ -473,7 +476,7 @@ def browse(kind: str = Form("folder"), start: str = Form("")):
 
 
 @app.post("/api/open-folder")
-def open_folder(path: str = Form("")):
+def open_folder(request: Request, path: str = Form("")):
     client_ip = request.client.host if request and request.client else ""
     if client_ip not in ("127.0.0.1", "::1", "localhost"):
         raise HTTPException(status_code=403, detail="Endpoint restricted to localhost")
@@ -500,7 +503,7 @@ def open_folder(path: str = Form("")):
 
 
 @app.post("/api/reveal")
-def reveal(path: str = Form(...)):
+def reveal(request: Request, path: str = Form(...)):
     client_ip = request.client.host if request and request.client else ""
     if client_ip not in ("127.0.0.1", "::1", "localhost"):
         raise HTTPException(status_code=403, detail="Endpoint restricted to localhost")

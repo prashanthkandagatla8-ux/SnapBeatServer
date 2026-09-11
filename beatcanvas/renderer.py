@@ -1127,7 +1127,7 @@ def render(template: Template, photos: PhotoSet, output: str | Path,
                 break
 
             if is_solid_title and index < title_frames:
-                frame = title_card_bgr
+                frame = title_card_bgr.copy()
             else:
                 slide_index = index - title_frames if is_solid_title else index
                 slide_time_s = slide_index / template.fps
