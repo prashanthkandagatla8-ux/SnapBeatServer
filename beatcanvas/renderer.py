@@ -921,67 +921,84 @@ def _overlay_title_on_frame(frame_bgr: np.ndarray, text: str, width: int, height
     return np.array(img.convert("RGB"))[:, :, ::-1]
 
 
+_WATERMARK_CACHE: dict[tuple[int, int], dict | None] = {}
+
+
+def _get_watermark_overlay(target_w: int, target_h: int) -> dict | None:
+    """Precompute and cache scaled watermark and alpha masks for given resolution."""
+    key = (target_w, target_h)
+    if key in _WATERMARK_CACHE:
+        return _WATERMARK_CACHE[key]
+
+    base_dir = Path(__file__).resolve().parent.parent
+    possible_paths = [
+        base_dir / "_assets" / "watermark.png",
+        base_dir / "_assets" / "snap_beat_transparent.png",
+        Path("/opt/snapbeat/server/_assets/watermark.png"),
+        Path("/opt/snapbeat/server/_assets/snap_beat_transparent.png"),
+        Path(r"C:\MyProjects\SnapBeatServer\_assets\watermark.png"),
+    ]
+
+    wm_path = None
+    for p in possible_paths:
+        if p.exists():
+            wm_path = p
+            break
+
+    if not wm_path:
+        _WATERMARK_CACHE[key] = None
+        return None
+
+    wm_img = cv2.imread(str(wm_path), cv2.IMREAD_UNCHANGED)
+    if wm_img is None or wm_img.ndim < 3 or wm_img.shape[2] < 4:
+        _WATERMARK_CACHE[key] = None
+        return None
+
+    # Calculate desired width: ~23% of canvas width, capped between 100px and 360px
+    wm_w = int(target_w * 0.23)
+    wm_w = max(100, min(wm_w, 360))
+    aspect = wm_img.shape[0] / float(wm_img.shape[1])
+    wm_h = int(wm_w * aspect)
+
+    wm_resized = cv2.resize(wm_img, (wm_w, wm_h), interpolation=cv2.INTER_AREA)
+
+    margin_x = max(16, int(target_w * 0.04))
+    margin_y = max(16, int(target_h * 0.04))
+
+    x2 = target_w - margin_x
+    x1 = max(0, x2 - wm_w)
+    y2 = target_h - margin_y
+    y1 = max(0, y2 - wm_h)
+
+    actual_w = x2 - x1
+    actual_h = y2 - y1
+    if actual_w != wm_w or actual_h != wm_h:
+        wm_resized = wm_resized[:actual_h, :actual_w]
+
+    bgr = wm_resized[:, :, :3].astype(np.float32)
+    alpha = (wm_resized[:, :, 3] / 255.0)[:, :, np.newaxis].astype(np.float32)
+
+    cached_val = {
+        "x1": x1, "y1": y1, "x2": x2, "y2": y2,
+        "bgr_alpha": bgr * alpha,
+        "inv_alpha": 1.0 - alpha,
+    }
+    _WATERMARK_CACHE[key] = cached_val
+    return cached_val
+
+
 def _overlay_watermark(frame_bgr: np.ndarray, width: int, height: int) -> np.ndarray:
-    """Overlay prominent branded 'SNAPBEAT - Free Version' watermark badge in the bottom right corner."""
-    title_text = "SNAPBEAT"
-    sub_text = "Made with Free Version"
+    """Overlay branded transparent PNG watermark badge in bottom-right corner."""
+    overlay = _get_watermark_overlay(width, height)
+    if overlay is None:
+        return frame_bgr
 
-    font_title = cv2.FONT_HERSHEY_DUPLEX
-    font_sub = cv2.FONT_HERSHEY_SIMPLEX
+    x1, y1, x2, y2 = overlay["x1"], overlay["y1"], overlay["x2"], overlay["y2"]
+    inv_alpha = overlay["inv_alpha"]
+    bgr_alpha = overlay["bgr_alpha"]
 
-    # Prominent responsive scaling based on frame width
-    scale_title = max(0.85, width / 950.0)
-    scale_sub = scale_title * 0.60
-
-    thick_title = max(2, int(round(scale_title * 2.2)))
-    thick_sub = max(1, int(round(scale_sub * 1.8)))
-
-    (tw1, th1), _ = cv2.getTextSize(title_text, font_title, scale_title, thick_title)
-    (tw2, th2), _ = cv2.getTextSize(sub_text, font_sub, scale_sub, thick_sub)
-
-    tw = max(tw1, tw2)
-    spacing = int(8 * scale_title)
-    total_h = th1 + spacing + th2
-
-    margin_x = int(width * 0.045)
-    margin_y = int(height * 0.045)
-
-    pad_x = int(20 * scale_title)
-    pad_y = int(14 * scale_title)
-
-    box_w = tw + 2 * pad_x
-    box_h = total_h + 2 * pad_y
-
-    x2 = width - margin_x
-    x1 = max(0, x2 - box_w)
-    y2 = height - margin_y
-    y1 = max(0, y2 - box_h)
-
-    # Dark background pill with 82% opacity and gold border for clear, prominent contrast
-    sub_img = frame_bgr[y1:y2, x1:x2]
-    if sub_img.shape[0] > 0 and sub_img.shape[1] > 0:
-        dark_card = np.full_like(sub_img, 16)  # dark slate #101010
-        cv2.addWeighted(dark_card, 0.82, sub_img, 0.18, 0, sub_img)
-
-        # Crisp yellow/gold border (BGR: 77, 225, 255)
-        cv2.rectangle(sub_img, (0, 0), (sub_img.shape[1] - 1, sub_img.shape[0] - 1), (77, 225, 255), 2, cv2.LINE_AA)
-        frame_bgr[y1:y2, x1:x2] = sub_img
-
-    # Centered text coordinates
-    tx1 = x1 + pad_x + (tw - tw1) // 2
-    ty1 = y1 + pad_y + th1
-
-    tx2 = x1 + pad_x + (tw - tw2) // 2
-    ty2 = ty1 + spacing + th2
-
-    # Draw Title (Bold Yellow/Gold with dark drop shadow)
-    cv2.putText(frame_bgr, title_text, (tx1 + 2, ty1 + 2), font_title, scale_title, (0, 0, 0), thick_title + 2, cv2.LINE_AA)
-    cv2.putText(frame_bgr, title_text, (tx1, ty1), font_title, scale_title, (77, 225, 255), thick_title, cv2.LINE_AA)
-
-    # Draw Subtitle (Crisp White with shadow)
-    cv2.putText(frame_bgr, sub_text, (tx2 + 2, ty2 + 2), font_sub, scale_sub, (0, 0, 0), thick_sub + 2, cv2.LINE_AA)
-    cv2.putText(frame_bgr, sub_text, (tx2, ty2), font_sub, scale_sub, (245, 245, 250), thick_sub, cv2.LINE_AA)
-
+    roi = frame_bgr[y1:y2, x1:x2].astype(np.float32)
+    frame_bgr[y1:y2, x1:x2] = np.clip(roi * inv_alpha + bgr_alpha, 0, 255).astype(np.uint8)
     return frame_bgr
 
 
