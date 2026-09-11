@@ -571,7 +571,8 @@ def render_mobile(
     quality: str = Form("fast"),
     auto_arrange: str = Form("auto"),
     watermark: str = Form("true"),
-    render_type: str = Form("free_queue")
+    render_type: str = Form("free_queue"),
+    cover_mode: str = Form(None)
 ):
     # Security check: If SNAPBEAT_INTERNAL_SECRET is configured, require authorization header
     internal_secret = os.environ.get("SNAPBEAT_INTERNAL_SECRET", "").strip()
@@ -633,7 +634,7 @@ def render_mobile(
         "frame": frame if frame in ("portrait", "landscape", "square") else "portrait",
         "pace": "medium",
         "intensity": 1.0,
-        "cover_mode": "zoom",
+        "cover_mode": cover_mode.lower().strip() if (cover_mode and cover_mode.lower().strip() in ("zoom", "mirror", "fit", "contain")) else None,
         "reveal_shape": "circle",
         "drop_it": drop_it in ("true", "1", "yes"),
         "audio_start": start_sec,

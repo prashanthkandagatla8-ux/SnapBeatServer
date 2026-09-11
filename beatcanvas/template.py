@@ -33,23 +33,27 @@ def resolve_audio(audio_path: str, near: Path | None = None) -> str:
     """
     if not audio_path:
         return ""
-    candidate = Path(audio_path)
+    normalized_path = audio_path.replace("\\", "/")
+    candidate = Path(normalized_path)
     if candidate.exists():
         return str(candidate if candidate.is_absolute() else candidate.resolve())
+
+    filename = candidate.name
+    stem = candidate.stem
 
     home_music = Path.home() / "Music"
     folders = [config.TEMPLATE_MUSIC_DIR, config.TEMPLATE_DIR, home_music]
     if near:
         folders.insert(0, near)
     for folder in folders:
-        found = folder / candidate.name
+        found = folder / filename
         if found.exists():
             return str(found)
     # A track renamed with a track number still counts as the same file.
     for folder in folders:
         if not folder.is_dir():
             continue
-        for found in sorted(folder.glob(f"*{candidate.stem}*")):
+        for found in sorted(folder.glob(f"*{stem}*")):
             if found.is_file():
                 return str(found)
     return audio_path
