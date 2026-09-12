@@ -707,9 +707,11 @@ def _compose_clip(template: Template, photos: PhotoSet, clip: Clip, time_s: floa
     return canvas, state
 
 
-def _parse_hex_color(c: str) -> tuple[int, int, int]:
+def _parse_hex_color(hex_str: str) -> tuple:
     """Parse color string into RGB tuple. Supports 'black', hex '#RRGGBB', or default black."""
-    c = c.strip().lstrip("#")
+    c = hex_str.strip().lstrip('#')
+    if len(c) == 3:
+        c = ''.join(ch * 2 for ch in c)
     if len(c) == 6:
         try:
             return (int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16))
@@ -748,16 +750,22 @@ def _get_title_font(family: str, fontsize: int) -> ImageFont.ImageFont:
             return ImageFont.truetype(name, fontsize)
         except Exception:
             continue
+    # Last resort: try any bundled font
+    for fallback in base_assets.glob("*.ttf"):
+        try:
+            return ImageFont.truetype(str(fallback), fontsize)
+        except Exception:
+            continue
     return ImageFont.load_default()
 
 
 def _draw_title_artwork(img: Image.Image, text: str, width: int, height: int,
-                        font_family: str = "impact", style: str = "classic",
+                        font_family: str = "great_vibes", style: str = "classic",
                         frame_style: str = "none", is_overlay: bool = False) -> None:
     """Draw professionally styled title card or overlay onto PIL image."""
     draw = ImageDraw.Draw(img, "RGBA")
     style = (style or "classic").lower().strip()
-    font_family = (font_family or "impact").lower().strip()
+    font_family = (font_family or "great_vibes").lower().strip()
     frame_style = (frame_style or "none").lower().strip()
 
     formatted_text = text.upper() if style == "cinematic" else text
@@ -769,8 +777,13 @@ def _draw_title_artwork(img: Image.Image, text: str, width: int, height: int,
     chosen_font = _get_title_font(font_family, target_fs)
     chosen_lh = int(target_fs * 1.35)
 
-    for fs in range(target_fs, 20, -4):
+    smallest_font = chosen_font
+    smallest_lines = chosen_lines
+    smallest_lh = chosen_lh
+
+    for fs in range(target_fs, 23, -1):
         font = _get_title_font(font_family, fs)
+        smallest_font = font
         words = formatted_text.split()
         lines: list[str] = []
         curr: list[str] = []
@@ -796,11 +809,17 @@ def _draw_title_artwork(img: Image.Image, text: str, width: int, height: int,
 
         lh = int(fs * 1.35)
         total_h = len(lines) * lh
+        smallest_lines = lines
+        smallest_lh = lh
         if not overflow and total_h <= max_h:
             chosen_lines = lines
             chosen_font = font
             chosen_lh = lh
             break
+    else:
+        chosen_font = smallest_font
+        chosen_lines = smallest_lines
+        chosen_lh = smallest_lh
 
     total_h = len(chosen_lines) * chosen_lh
     sy = (height - total_h) // 2
@@ -833,102 +852,130 @@ def _draw_title_artwork(img: Image.Image, text: str, width: int, height: int,
 
     # Scrim for overlay if not badge
     if is_overlay and style != "badge":
-        draw.rectangle([(0, by0 - 20), (width, by1 + 20)], fill=(0, 0, 0, 160))
+        scrim_overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        scrim_draw = ImageDraw.Draw(scrim_overlay)
+        scrim_draw.rectangle([(0, by0 - 20), (width, by1 + 20)], fill=(0, 0, 0, 160))
+        img.alpha_composite(scrim_overlay)
 
-    # Badge style container
-    if style == "badge":
-        radius = max(8, int(chosen_lh * 0.35))
-        draw.rounded_rectangle([bx0, by0, bx1, by1], radius=radius, fill=(255, 225, 77, 245),
-                               outline=(20, 20, 20, 255), width=3)
+    # Decorative frames and badge container on separate transparent overlay
+    if style == "badge" or frame_style in ("box", "double_line", "viewfinder", "film_bars"):
+        frame_overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        frame_draw = ImageDraw.Draw(frame_overlay)
 
-    # Draw decorative frames
-    if frame_style == "box":
-        fx0 = int(width * 0.08)
-        fy0 = int(height * 0.12) if not is_overlay else max(0, by0 - 30)
-        fx1 = width - fx0
-        fy1 = height - fy0 if not is_overlay else min(height, by1 + 30)
-        draw.rectangle([fx0, fy0, fx1, fy1], outline=frame_color, width=3)
-    elif frame_style == "double_line":
-        fx0 = int(width * 0.08)
-        fy0 = int(height * 0.12) if not is_overlay else max(0, by0 - 30)
-        fx1 = width - fx0
-        fy1 = height - fy0 if not is_overlay else min(height, by1 + 30)
-        draw.rectangle([fx0, fy0, fx1, fy1], outline=frame_color, width=2)
-        draw.rectangle([fx0 + 8, fy0 + 8, fx1 - 8, fy1 - 8], outline=frame_color, width=2)
-    elif frame_style == "viewfinder":
-        fx0 = int(width * 0.08)
-        fy0 = int(height * 0.12) if not is_overlay else max(0, by0 - 35)
-        fx1 = width - fx0
-        fy1 = height - fy0 if not is_overlay else min(height, by1 + 35)
-        arm = max(24, int(width * 0.06))
-        # 4 corners
-        draw.line([(fx0, fy0), (fx0 + arm, fy0)], fill=frame_color, width=3)
-        draw.line([(fx0, fy0), (fx0, fy0 + arm)], fill=frame_color, width=3)
-        draw.line([(fx1, fy0), (fx1 - arm, fy0)], fill=frame_color, width=3)
-        draw.line([(fx1, fy0), (fx1, fy0 + arm)], fill=frame_color, width=3)
-        draw.line([(fx0, fy1), (fx0 + arm, fy1)], fill=frame_color, width=3)
-        draw.line([(fx0, fy1), (fx0, fy1 - arm)], fill=frame_color, width=3)
-        draw.line([(fx1, fy1), (fx1 - arm, fy1)], fill=frame_color, width=3)
-        draw.line([(fx1, fy1), (fx1, fy1 - arm)], fill=frame_color, width=3)
-        # Center ticks
-        cx, cy = width // 2, height // 2
-        draw.line([(cx - 12, cy), (cx + 12, cy)], fill=frame_color, width=2)
-        draw.line([(cx, cy - 12), (cx, cy + 12)], fill=frame_color, width=2)
-    elif frame_style == "film_bars":
-        y_top = int(height * 0.16) if not is_overlay else max(0, by0 - 25)
-        y_bot = int(height * 0.84) if not is_overlay else min(height, by1 + 25)
-        draw.line([(int(width * 0.08), y_top), (int(width * 0.92), y_top)], fill=frame_color, width=3)
-        draw.line([(int(width * 0.08), y_bot), (int(width * 0.92), y_bot)], fill=frame_color, width=3)
+        # Badge style container
+        if style == "badge":
+            radius = max(8, int(chosen_lh * 0.35))
+            frame_draw.rounded_rectangle([bx0, by0, bx1, by1], radius=radius, fill=(255, 225, 77, 245),
+                                         outline=(20, 20, 20, 255), width=3)
+
+        # Draw decorative frames
+        if frame_style == "box":
+            fx0 = int(width * 0.08)
+            fy0 = int(height * 0.12) if not is_overlay else max(0, by0 - 30)
+            fx1 = width - fx0
+            fy1 = height - fy0 if not is_overlay else min(height, by1 + 30)
+            frame_draw.rectangle([fx0, fy0, fx1, fy1], outline=frame_color, width=3)
+        elif frame_style == "double_line":
+            fx0 = int(width * 0.08)
+            fy0 = int(height * 0.12) if not is_overlay else max(0, by0 - 30)
+            fx1 = width - fx0
+            fy1 = height - fy0 if not is_overlay else min(height, by1 + 30)
+            frame_draw.rectangle([fx0, fy0, fx1, fy1], outline=frame_color, width=2)
+            frame_draw.rectangle([fx0 + 8, fy0 + 8, fx1 - 8, fy1 - 8], outline=frame_color, width=2)
+        elif frame_style == "viewfinder":
+            fx0 = int(width * 0.08)
+            fy0 = int(height * 0.12) if not is_overlay else max(0, by0 - 35)
+            fx1 = width - fx0
+            fy1 = height - fy0 if not is_overlay else min(height, by1 + 35)
+            arm = max(24, int(width * 0.06))
+            # 4 corners
+            frame_draw.line([(fx0, fy0), (fx0 + arm, fy0)], fill=frame_color, width=3)
+            frame_draw.line([(fx0, fy0), (fx0, fy0 + arm)], fill=frame_color, width=3)
+            frame_draw.line([(fx1, fy0), (fx1 - arm, fy0)], fill=frame_color, width=3)
+            frame_draw.line([(fx1, fy0), (fx1, fy0 + arm)], fill=frame_color, width=3)
+            frame_draw.line([(fx0, fy1), (fx0 + arm, fy1)], fill=frame_color, width=3)
+            frame_draw.line([(fx0, fy1), (fx0, fy1 - arm)], fill=frame_color, width=3)
+            frame_draw.line([(fx1, fy1), (fx1 - arm, fy1)], fill=frame_color, width=3)
+            frame_draw.line([(fx1, fy1), (fx1, fy1 - arm)], fill=frame_color, width=3)
+            # Center ticks
+            cx, cy = width // 2, height // 2
+            frame_draw.line([(cx - 12, cy), (cx + 12, cy)], fill=frame_color, width=2)
+            frame_draw.line([(cx, cy - 12), (cx, cy + 12)], fill=frame_color, width=2)
+        elif frame_style == "film_bars":
+            y_top = int(height * 0.16) if not is_overlay else max(0, by0 - 25)
+            y_bot = int(height * 0.84) if not is_overlay else min(height, by1 + 25)
+            frame_draw.line([(int(width * 0.08), y_top), (int(width * 0.92), y_top)], fill=frame_color, width=3)
+            frame_draw.line([(int(width * 0.08), y_bot), (int(width * 0.92), y_bot)], fill=frame_color, width=3)
+
+        img.alpha_composite(frame_overlay)
 
     # Draw text lines
-    for i, line in enumerate(chosen_lines):
-        lw, _ = line_metrics[i]
-        x = (width - lw) // 2
-        y = sy + i * chosen_lh
-
-        if style == "classic":
-            draw.text((x + 4, y + 4), line, fill=(0, 0, 0, 240), font=chosen_font)
-            draw.text((x, y), line, fill=(255, 225, 77, 255), font=chosen_font,
-                      stroke_width=2, stroke_fill=(0, 0, 0, 255))
-        elif style == "neon":
-            # Multi-directional glow offsets
+    if style == "neon":
+        glow_overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        glow_draw = ImageDraw.Draw(glow_overlay)
+        for i, line in enumerate(chosen_lines):
+            lw, bbox = line_metrics[i]
+            x = (width - lw) // 2 - bbox[0]
+            y = sy + i * chosen_lh
             for dx, dy in [(-3, 0), (3, 0), (0, -3), (0, 3), (-2, -2), (2, 2), (-2, 2), (2, -2)]:
-                draw.text((x + dx, y + dy), line, fill=(0, 240, 255, 120), font=chosen_font)
-            draw.text((x, y), line, fill=(255, 255, 255, 255), font=chosen_font,
-                      stroke_width=2, stroke_fill=(0, 240, 255, 240))
-        elif style == "3d_retro":
-            for d in range(8, 0, -1):
-                r = int(20 + (255 - 20) * (d / 8))
-                g = int(10 + (45 - 10) * (d / 8))
-                b = int(40 + (120 - 40) * (d / 8))
-                draw.text((x + d, y + d), line, fill=(r, g, b, 255), font=chosen_font)
-            draw.text((x, y), line, fill=(255, 235, 60, 255), font=chosen_font,
-                      stroke_width=2, stroke_fill=(15, 15, 15, 255))
-        elif style == "cinematic":
-            draw.text((x + 2, y + 2), line, fill=(0, 0, 0, 180), font=chosen_font)
-            draw.text((x, y), line, fill=(250, 246, 238, 255), font=chosen_font)
-        elif style == "badge":
-            draw.text((x, y), line, fill=(18, 18, 18, 255), font=chosen_font)
-        else:
-            draw.text((x + 3, y + 3), line, fill=(0, 0, 0, 240), font=chosen_font)
-            draw.text((x, y), line, fill=(255, 225, 77, 255), font=chosen_font)
+                glow_draw.text((x + dx, y + dy), line, fill=(0, 240, 255, 120), font=chosen_font)
+        img.alpha_composite(glow_overlay)
+
+        text_overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        text_draw = ImageDraw.Draw(text_overlay)
+        for i, line in enumerate(chosen_lines):
+            lw, bbox = line_metrics[i]
+            x = (width - lw) // 2 - bbox[0]
+            y = sy + i * chosen_lh
+            text_draw.text((x, y), line, fill=(255, 255, 255, 255), font=chosen_font,
+                           stroke_width=2, stroke_fill=(0, 240, 255, 240))
+        img.alpha_composite(text_overlay)
+    else:
+        text_overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        text_draw = ImageDraw.Draw(text_overlay)
+        for i, line in enumerate(chosen_lines):
+            lw, bbox = line_metrics[i]
+            x = (width - lw) // 2 - bbox[0]
+            y = sy + i * chosen_lh
+
+            if style == "classic":
+                text_draw.text((x + 4, y + 4), line, fill=(0, 0, 0, 240), font=chosen_font)
+                text_draw.text((x, y), line, fill=(255, 225, 77, 255), font=chosen_font,
+                               stroke_width=2, stroke_fill=(0, 0, 0, 255))
+            elif style == "3d_retro":
+                for d in range(8, 0, -1):
+                    r = int(20 + (255 - 20) * (d / 8))
+                    g = int(10 + (45 - 10) * (d / 8))
+                    b = int(40 + (120 - 40) * (d / 8))
+                    text_draw.text((x + d, y + d), line, fill=(r, g, b, 255), font=chosen_font)
+                text_draw.text((x, y), line, fill=(255, 235, 60, 255), font=chosen_font,
+                               stroke_width=2, stroke_fill=(15, 15, 15, 255))
+            elif style == "cinematic":
+                text_draw.text((x + 2, y + 2), line, fill=(0, 0, 0, 180), font=chosen_font)
+                text_draw.text((x, y), line, fill=(250, 246, 238, 255), font=chosen_font)
+            elif style == "badge":
+                text_draw.text((x, y), line, fill=(18, 18, 18, 255), font=chosen_font)
+            else:
+                text_draw.text((x + 3, y + 3), line, fill=(0, 0, 0, 240), font=chosen_font)
+                text_draw.text((x, y), line, fill=(255, 225, 77, 255), font=chosen_font)
+        img.alpha_composite(text_overlay)
 
 
 def _render_title_card_frame(width: int, height: int, text: str, bg_rgb: tuple[int, int, int],
-                             font_family: str = "impact", style: str = "classic",
+                             font_family: str = "great_vibes", style: str = "classic",
                              frame_style: str = "none") -> np.ndarray:
     """Render a solid color title card with styled text and frame (returns BGR uint8 ndarray)."""
-    img = Image.new("RGB", (width, height), color=bg_rgb)
+    img = Image.new("RGBA", (width, height), color=(*bg_rgb, 255))
     _draw_title_artwork(img, text, width, height, font_family=font_family, style=style,
                         frame_style=frame_style, is_overlay=False)
-    return np.array(img)[:, :, ::-1]
+    return np.array(img.convert("RGB"))[:, :, ::-1]
 
 
 def _overlay_title_on_frame(frame_bgr: np.ndarray, text: str, width: int, height: int,
-                            font_family: str = "impact", style: str = "classic",
+                            font_family: str = "great_vibes", style: str = "classic",
                             frame_style: str = "none") -> np.ndarray:
     """Overlay styled title text and frame on a BGR video frame."""
-    img = Image.fromarray(frame_bgr[:, :, ::-1])
+    img = Image.fromarray(frame_bgr[:, :, ::-1]).convert("RGBA")
     _draw_title_artwork(img, text, width, height, font_family=font_family, style=style,
                         frame_style=frame_style, is_overlay=True)
     return np.array(img.convert("RGB"))[:, :, ::-1]
@@ -982,6 +1029,10 @@ def _get_watermark_overlay(target_w: int, target_h: int) -> dict | None:
     x1 = max(0, x2 - wm_w)
     y2 = target_h - margin_y
     y1 = max(0, y2 - wm_h)
+
+    if target_w < 150 or target_h < 150 or x2 <= x1 or y2 <= y1:
+        _WATERMARK_CACHE[key] = None
+        return None  # skip watermark on undersized frames
 
     actual_w = x2 - x1
     actual_h = y2 - y1
@@ -1056,6 +1107,8 @@ def _overlay_watermark_fallback(frame_bgr: np.ndarray, width: int, height: int) 
 
 def _overlay_watermark(frame_bgr: np.ndarray, width: int, height: int) -> np.ndarray:
     """Overlay branded transparent PNG watermark badge in bottom-right corner."""
+    if width < 150 or height < 150:
+        return frame_bgr
     overlay = _get_watermark_overlay(width, height)
     if overlay is None:
         return _overlay_watermark_fallback(frame_bgr, width, height)
@@ -1083,11 +1136,14 @@ def _open_encoder(output: Path, width: int, height: int, fps: float,
     if audio is not None:
         # Trim the music to the template's own span, from wherever the edit started.
         command += ["-ss", f"{max(0.0, audio_start)}", "-i", str(audio)]
+        command += ["-map", "0:v:0", "-map", "1:a:0", "-c:a", "aac", "-b:a", "192k"]
         if audio_delay > 0.001:
             delay_ms = int(round(audio_delay * 1000))
-            command += ["-af", f"adelay={delay_ms}|{delay_ms}"]
-        command += ["-map", "0:v:0", "-map", "1:a:0", "-c:a", "aac", "-b:a", "192k",
-                    "-shortest"]
+            command += ["-af", f"adelay={delay_ms}:all=1"]
+            command += ["-shortest"]
+        else:
+            # No delay means audio started at 0, use explicit duration
+            command += ["-t", f"{duration:.3f}"]
     else:
         command += ["-an"]
     command += [
@@ -1097,7 +1153,7 @@ def _open_encoder(output: Path, width: int, height: int, fps: float,
         str(output),
     ]
     kwargs: dict = dict(stdin=subprocess.PIPE,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if sys.platform == "win32":
         kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
     return subprocess.Popen(command, **kwargs)
@@ -1151,7 +1207,7 @@ def render(template: Template, photos: PhotoSet, output: str | Path,
     title_text = (options.get("title_text", "") if options else "").strip()
     title_bg = (options.get("title_bg", "black") if options else "black").strip()
     title_duration = float(options.get("title_duration", 2)) if options else 2.0
-    title_font = (options.get("title_font", "impact") if options else "impact").strip()
+    title_font = (options.get("title_font", "great_vibes") if options else "great_vibes").strip()
     title_style = (options.get("title_style", "classic") if options else "classic").strip()
     title_frame = (options.get("title_frame", "none") if options else "none").strip()
     title_audio = (options.get("title_audio", "before_audio") if options else "before_audio").strip().lower()
@@ -1164,8 +1220,11 @@ def render(template: Template, photos: PhotoSet, output: str | Path,
     title_frames = max(1, int(round(title_duration * template.fps))) if is_solid_title else 0
     total_frames = slide_frames + title_frames
 
-    total_duration = template.duration + (title_frames / template.fps if is_solid_title else 0.0)
+    total_duration = total_frames / template.fps
     audio_delay = (title_frames / template.fps) if (is_solid_title and title_audio != "with_audio") else 0.0
+    # When with_audio, the audio started at frame 0, so by the time slides begin,
+    # the music is already title_duration seconds in. Offset accordingly.
+    audio_offset = title_duration if (is_solid_title and title_audio == "with_audio") else 0.0
 
     title_card_bgr = (
         _render_title_card_frame(
@@ -1199,7 +1258,7 @@ def render(template: Template, photos: PhotoSet, output: str | Path,
             else:
                 slide_index = index - title_frames if is_solid_title else index
                 slide_time_s = slide_index / template.fps
-                frame = render_frame(working, photo_set, slide_time_s, canvas)
+                frame = render_frame(working, photo_set, slide_time_s + audio_offset, canvas)
                 if is_overlay_title and slide_time_s < title_duration:
                     frame = _overlay_title_on_frame(
                         frame, title_text, width, height,
@@ -1209,7 +1268,10 @@ def render(template: Template, photos: PhotoSet, output: str | Path,
             if apply_watermark:
                 frame = _overlay_watermark(frame, width, height)
 
-            encoder.stdin.write(frame.tobytes())
+            try:
+                encoder.stdin.write(frame.tobytes())
+            except (BrokenPipeError, OSError):
+                break
             if frame_folder:
                 cv2.imwrite(str(frame_folder / f"frame_{index:05d}.png"), frame)
             written += 1

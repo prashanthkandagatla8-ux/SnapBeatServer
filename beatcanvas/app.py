@@ -47,8 +47,8 @@ app = FastAPI(title="BeatCanvas", docs_url=None, redoc_url=None, lifespan=lifesp
 from fastapi.middleware.cors import CORSMiddleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:8772", "http://localhost:8772", "*"],
-    allow_credentials=True,
+    allow_origins=["http://127.0.0.1:8772", "http://localhost:8772"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -402,7 +402,7 @@ async def receive_drop(files: list[UploadFile] = File(...)):
     saved_music: list[str] = []
     skipped: list[str] = []
 
-    for upload in files:
+    for idx, upload in enumerate(files):
         if not upload or not upload.filename:
             continue
         name = Path(upload.filename.replace("\\", "/")).name
@@ -410,10 +410,10 @@ async def receive_drop(files: list[UploadFile] = File(...)):
         suffix = Path(clean).suffix.lower()
 
         if suffix in config.IMAGE_EXTENSIONS:
-            target = photos_dir / clean
+            target = photos_dir / f"{idx}_{clean}"
             bucket = saved_photos
         elif suffix in AUDIO_SUFFIXES:
-            target = music_dir / clean
+            target = music_dir / f"{idx}_{clean}"
             bucket = saved_music
         else:
             skipped.append(name)
@@ -527,24 +527,13 @@ def reveal(request: Request, path: str = Form(...)):
                             detail="only BeatCanvas's own output can be revealed")
 
     if sys.platform == "win32":
-        subprocess.Popen(["explorer", f"/select,{resolved}"], shell=False)
+        subprocess.Popen(f'explorer /select,"{resolved}"', shell=True)
     elif sys.platform == "darwin":
         subprocess.Popen(["open", "-R", str(resolved)], shell=False)
     else:
         subprocess.Popen(["xdg-open", str(resolved.parent)], shell=False)
     return {"ok": True}
 
-
-@app.get("/api/health")
-def health():
-    return JSONResponse({
-        "ok": True,
-        "ffmpeg": config.FFMPEG,
-        "templates": len(list_templates()),
-        "animations": list(animations.SELECTABLE),
-        "music_modes": list(MUSIC_MODES),
-        "worker_job": worker.current_job_id,
-    })
 
 import asyncio
 from fastapi.responses import FileResponse
@@ -585,6 +574,9 @@ def render_mobile(
         if client_auth != internal_secret:
             raise HTTPException(status_code=401, detail="Unauthorized: Serverless render requires verified access.")
 
+    if not photos or len(photos) < 2:
+        raise HTTPException(status_code=400, detail="Please upload at least 2 photos")
+
     import shutil
     import uuid
 
@@ -609,27 +601,20 @@ def render_mobile(
             shutil.copyfileobj(p.file, f)
         photo_paths.append(str(p_path.resolve()))
 
-    # Smart Photo Arrangement (Gemini Multimodal AI + Computer Vision Fallback)
-    arranged_photos = photo_paths
-    if (auto_arrange or "auto").lower() in ("auto", "true", "1", "yes"):
-        try:
-            from . import smart_arranger
-            arranged_photos = smart_arranger.auto_arrange_photos(
-                photo_paths,
-                audio_path=str(audio_path.resolve())
-            )
-        except Exception as e:
-            logger.warning(f"Auto-arrange execution error: {e}")
-            arranged_photos = photo_paths
-
     start_sec = max(0.0, float(audio_start or 0))
     end_sec = max(0.0, float(audio_end or 0))
     is_full = full_track.lower() in ("true", "1", "yes") or end_sec <= 0 or end_sec <= start_sec
     max_sec = 0.0 if is_full else max(5.0, end_sec - start_sec)
 
+    try:
+        parsed_title_dur = int(float(title_duration or 2))
+    except (ValueError, TypeError):
+        parsed_title_dur = 2
+
     options = {
+        "upload_dir": str(inbox.resolve()),
         "photo_folder": str(photos_dir.resolve()),
-        "photo_order": arranged_photos,
+        "photo_order": photo_paths,
         "auto_arrange": (auto_arrange or "auto").lower() in ("auto", "true", "1", "yes"),
         "music_path": str(audio_path.resolve()),
         "fill": "repeat",
@@ -646,7 +631,7 @@ def render_mobile(
         "max_seconds": max_sec,
         "title_text": (title_text or "").strip(),
         "title_bg": title_bg if title_bg in ("black", "video") or title_bg.startswith("#") else "black",
-        "title_duration": max(1, min(6, int(title_duration or 2))),
+        "title_duration": max(1, min(6, parsed_title_dur)),
         "title_font": (title_font or "great_vibes").lower().strip(),
         "title_style": (title_style or "classic").lower().strip(),
         "title_frame": (title_frame or "none").lower().strip(),
@@ -656,11 +641,20 @@ def render_mobile(
         "render_type": (render_type or "free_queue").lower().strip(),
     }
 
-    # Fix: Sanitize template name — strip .json suffix, block path traversal
+    # Fix: Sanitize template name — strip .json suffix, block path traversal, support "auto"
     if template:
-        template = template.removesuffix(".json")
-        template = Path(template).name  # strip any directory traversal
-    chosen_template = str(config.TEMPLATE_DIR / f"{template}.json") if template else str(config.TEMPLATE_DIR / "simple.json")
+        clean_template = Path(template.removesuffix(".json")).name
+        if clean_template.lower() == "auto":
+            chosen_template = "auto"
+        else:
+            tmpl_file = config.TEMPLATE_DIR / f"{clean_template}.json"
+            if tmpl_file.exists():
+                chosen_template = str(tmpl_file)
+            else:
+                chosen_template = str(config.TEMPLATE_DIR / "simple.json")
+    else:
+        chosen_template = str(config.TEMPLATE_DIR / "simple.json")
+
     job = job_store.create(f"mobile_{job_id_str[:8]}", chosen_template, options)
     worker.notify()
     return {"job_id": job.id}
@@ -683,7 +677,7 @@ def render_status(job_id: int):
     }
 
 @app.get("/api/render/download/{job_id}")
-def render_download(job_id: int, delete_after: bool = False, background_tasks: BackgroundTasks = BackgroundTasks()):
+def render_download(job_id: int, background_tasks: BackgroundTasks, delete_after: bool = False):
     import shutil
     job = job_store.get(job_id)
     if not job or job.status != store.STATUS_DONE:
@@ -698,10 +692,17 @@ def render_download(job_id: int, delete_after: bool = False, background_tasks: B
                 # Clean up rendered video
                 video_file.unlink(missing_ok=True)
                 # Clean up uploaded raw input folder
-                if job.name and job.name.startswith("mobile_"):
-                    dropped_dir = config.ROOT / "_dropped" / job.name.replace("mobile_", "")
-                    if dropped_dir.exists():
+                dropped_dir = Path(job.options.get("upload_dir", ""))
+                safe_root = config.ROOT / "_dropped"
+                try:
+                    resolved_dropped = dropped_dir.resolve()
+                    resolved_safe = safe_root.resolve()
+                    if (resolved_dropped != resolved_safe
+                        and resolved_dropped.is_relative_to(resolved_safe)
+                        and dropped_dir.exists()):
                         shutil.rmtree(dropped_dir, ignore_errors=True)
+                except (ValueError, OSError):
+                    pass
             except Exception:
                 pass
         background_tasks.add_task(_deferred_cleanup)
@@ -724,11 +725,18 @@ def render_cleanup(job_id: int):
             p.unlink(missing_ok=True)
             cleaned.append("video")
             
-    if job.name and job.name.startswith("mobile_"):
-        dropped_dir = config.ROOT / "_dropped" / job.name.replace("mobile_", "")
-        if dropped_dir.exists():
+    dropped_dir = Path(job.options.get("upload_dir", ""))
+    safe_root = config.ROOT / "_dropped"
+    try:
+        resolved_dropped = dropped_dir.resolve()
+        resolved_safe = safe_root.resolve()
+        if (resolved_dropped != resolved_safe
+            and resolved_dropped.is_relative_to(resolved_safe)
+            and dropped_dir.exists()):
             shutil.rmtree(dropped_dir, ignore_errors=True)
             cleaned.append("inputs")
+    except (ValueError, OSError):
+        pass
             
     return {"status": "ok", "cleaned": cleaned}
 
@@ -737,14 +745,20 @@ def render_cleanup(job_id: int):
 
 @app.get("/api/health")
 def api_health():
-    """Report server health and current load for gateway routing."""
+    """Report server health, capabilities, and current load for gateway routing."""
     import time
     active = job_store.count_active()
     return {
+        "ok": True,
         "status": "ok",
         "active_jobs": active,
         "max_workers": config.MAX_WORKERS,
         "available": max(0, config.MAX_WORKERS - active),
+        "ffmpeg": config.FFMPEG,
+        "templates": len(list_templates()),
+        "animations": list(animations.SELECTABLE),
+        "music_modes": list(MUSIC_MODES),
+        "worker_job": worker.current_job_id,
         "timestamp": time.time(),
     }
 

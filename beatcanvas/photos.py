@@ -109,7 +109,14 @@ def load(path: str | Path, canvas: tuple[int, int],
     as soon as it swings. Oversizing costs memory but guarantees the frame stays filled.
     """
     path = Path(path)
-    data = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+    data = cv2.imdecode(np.fromfile(str(path), dtype=np.uint8), cv2.IMREAD_UNCHANGED)
+    if data is not None:
+        if data.ndim == 2:
+            data = cv2.cvtColor(data, cv2.COLOR_GRAY2BGR)
+        elif data.ndim == 3 and data.shape[2] == 4:
+            data = cv2.cvtColor(data, cv2.COLOR_BGRA2BGR)
+        elif data.ndim == 3 and data.shape[2] == 1:
+            data = cv2.cvtColor(data, cv2.COLOR_GRAY2BGR)
     if data is None:
         raise OSError(f"could not read image: {path}")
 

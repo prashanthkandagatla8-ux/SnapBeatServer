@@ -374,7 +374,7 @@ class Template:
                 "no clear beats were detected in this track, so cuts were spaced evenly"
             ]
 
-        if usable[0] > 0.05:
+        if usable[0] > 0.0:
             usable = [0.0] + usable
 
         # max_seconds of 0 means "follow the music to its end". Checking for None rather

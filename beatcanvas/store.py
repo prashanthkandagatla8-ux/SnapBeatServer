@@ -10,9 +10,12 @@ machine, with a deliberate approval gate between the cheap preview and the full 
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import threading
 import time
+
+logger = logging.getLogger("beatcanvas.store")
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -99,7 +102,11 @@ class JobStore:
                 (STATUS_QUEUED, STATUS_PREVIEWING, STATUS_RENDERING)
             ).fetchall()
             for row in rows:
-                opts = json.loads(row["options"] or "{}")
+                try:
+                    opts = json.loads(row["options"] or "{}")
+                except (json.JSONDecodeError, TypeError) as exc:
+                    logger.warning("Skipping corrupt options for job %s: %s", row["id"], exc)
+                    continue
                 retries = opts.get("_retries", 0)
                 if retries >= 3:
                     self._conn.execute(

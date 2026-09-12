@@ -38,7 +38,7 @@ class Worker:
         self._cancels: set[int] = set()
         self._lock = threading.Lock()
         self.current_job_id: int | None = None
-        self._executor = ThreadPoolExecutor(max_workers=4)
+        self._executor = ThreadPoolExecutor(max_workers=config.MAX_WORKERS)
         self._active_count = 0
         self._active_lock = threading.Lock()
         self._last_progress_commit = {}
@@ -80,7 +80,7 @@ class Worker:
                 self._wake.wait(timeout=2.0)
                 self._wake.clear()
                 with self._active_lock:
-                    can_start = self._active_count < 4
+                    can_start = self._active_count < config.MAX_WORKERS
                 while can_start:
                     # Fix: Use atomic claim that marks job as rendering immediately
                     job = self.store.claim_next_queued()
@@ -88,7 +88,7 @@ class Worker:
                         break
                     with self._active_lock:
                         self._active_count += 1
-                        can_start = self._active_count < 4
+                        can_start = self._active_count < config.MAX_WORKERS
                     self._executor.submit(self._process_job, job)
             except Exception:
                 traceback.print_exc()
@@ -96,6 +96,7 @@ class Worker:
                 continue
 
     def _process_job(self, job: store.Job) -> None:
+        self.current_job_id = job.id
         try:
             self._run(job)
         except Exception as exc:
@@ -103,12 +104,17 @@ class Worker:
             print(f"Job {job.id} failed:\n{err}")
             self.store.update(job.id, status=store.STATUS_FAILED, stage="failed", error=err)
         finally:
+            self.current_job_id = None
             import shutil
             dropped_folder = Path(job.options.get("photo_folder", "")).parent
             # Fix: Only delete folders strictly inside ROOT/_dropped — no substring match
             safe_root = config.ROOT / "_dropped"
             try:
-                if dropped_folder.exists() and dropped_folder.resolve().is_relative_to(safe_root.resolve()):
+                resolved_dropped = dropped_folder.resolve()
+                resolved_safe = safe_root.resolve()
+                if (resolved_dropped != resolved_safe
+                    and resolved_dropped.is_relative_to(resolved_safe)
+                    and dropped_folder.exists()):
                     shutil.rmtree(dropped_folder, ignore_errors=True)
             except (ValueError, OSError):
                 pass  # is_relative_to can raise on some edge cases
@@ -142,8 +148,23 @@ class Worker:
         width, height = config.FRAME_SIZES.get(
             options.get("frame", ""), (0, 0))
 
+        pictures = self._photos_for(options)
+        if options.get("auto_arrange") and len(pictures) >= 2:
+            try:
+                self.store.update(job.id, stage="arranging photos")
+                from . import smart_arranger
+                audio_p = options.get("music_path")
+                reordered = smart_arranger.auto_arrange_photos(
+                    [str(p) for p in pictures],
+                    audio_path=str(audio_p) if audio_p else None,
+                )
+                if reordered:
+                    pictures = [Path(p) for p in reordered]
+                    options["photo_order"] = [str(p) for p in pictures]
+            except Exception as exc:
+                print(f"Auto-arrange failed in worker: {exc}")
+
         if auto:
-            pictures = self._photos_for(options)
             template = self._choreograph(job, options, width or 1080, height or 1920)
         else:
             template_path = Path(job.template)
@@ -157,8 +178,6 @@ class Worker:
             # evaluated against is the one actually being rendered.
             if width and height:
                 template.width, template.height = width, height
-
-            pictures = self._photos_for(options)
 
         if not auto and template.music_mode == "any":
             template = self._build_timing(job, template, options, len(pictures))
@@ -348,15 +367,17 @@ class Worker:
             return template
 
         # For each drop time, find the clip that contains it and replace with burst
+        from dataclasses import replace
         from .template import Clip
         new_clips = []
-        drop_set = set()
+        drop_map = {}
 
         # Find which clip indices contain a drop
         for dt in drop_times:
             for i, clip in enumerate(template.clips):
                 if clip.start <= dt < clip.start + clip.duration:
-                    drop_set.add(i)
+                    if i not in drop_map:
+                        drop_map[i] = dt
                     break
 
         burst_dur = 0.06   # duration of each burst micro-clip
@@ -367,17 +388,18 @@ class Worker:
         drops_injected = 0
 
         for i, clip in enumerate(template.clips):
-            if i not in drop_set:
+            if i not in drop_map:
                 clip.index = idx_counter
                 new_clips.append(clip)
                 idx_counter += 1
                 continue
 
+            dt = drop_map[i]
             drops_injected += 1
             total_burst_time = burst_count * burst_dur  # 0.3s for burst
-            remaining = clip.duration - total_burst_time
+            clip_end = clip.start + clip.duration
 
-            if remaining < 0.1:
+            if clip.duration < total_burst_time + 0.1:
                 # Clip too short for burst, just use it as-is with boosted intensity
                 clip.index = idx_counter
                 clip.animation = slam_anim
@@ -386,8 +408,26 @@ class Worker:
                 idx_counter += 1
                 continue
 
+            # Split clip so burst aligns with the actual bass drop at dt.
+            # Burst starts at dt - total_burst_time (0.3s) so it builds up to the drop.
+            burst_start = max(clip.start, min(dt - total_burst_time, clip_end - total_burst_time - 0.1))
+            pre_dur = burst_start - clip.start
+
+            # Keep the clip portion preceding the burst if it has significant duration
+            if pre_dur >= 0.05:
+                pre_clip = replace(
+                    clip,
+                    index=idx_counter,
+                    duration=round(pre_dur, 4),
+                    animation_duration=min(clip.animation_duration, pre_dur),
+                )
+                new_clips.append(pre_clip)
+                idx_counter += 1
+            else:
+                burst_start = clip.start
+
             # Inject burst micro-clips: rapid-fire cycling through photos
-            t = clip.start
+            t = burst_start
             for b in range(burst_count):
                 burst_slot = (clip.slot + b + 1) % max(1, photo_count)
                 micro = Clip(
@@ -406,6 +446,7 @@ class Worker:
                 t += burst_dur
 
             # Slam clip: the hero photo with punch animation + high intensity
+            remaining = clip_end - t
             slam = Clip(
                 index=idx_counter,
                 slot=clip.slot,
