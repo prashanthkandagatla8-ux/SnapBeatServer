@@ -666,12 +666,21 @@ def render_status(job_id: int):
         raise HTTPException(status_code=404, detail="job not found")
     
     display_stage = job.stage
-    if job.status == "queued":
-        display_stage = "Waiting in queue..."
+    queue_pos = 0
+    if job.status == store.STATUS_QUEUED:
+        queue_pos = job_store.get_queue_position(job_id)
+        if queue_pos > 0:
+            display_stage = f"Queue #{queue_pos} • Waiting for active render"
+        else:
+            display_stage = "Waiting in queue..."
+    elif job.status == store.STATUS_RENDERING:
+        if not display_stage or display_stage == "claimed":
+            display_stage = "Rendering in progress..."
         
     return {
         "status": job.status,
         "stage": display_stage,
+        "queue_position": queue_pos,
         "progress": round((job.progress or 0.0) * 100),
         "error": job.error
     }

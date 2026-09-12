@@ -218,3 +218,18 @@ class JobStore:
             ).fetchone()
         return row[0] if row else 0
 
+    def get_queue_position(self, job_id: int) -> int:
+        """Return 1-based position for a queued job.
+        1 means it is next in line to be processed once the active job finishes.
+        Returns 0 if the job is currently rendering or not in queued status.
+        """
+        with self._lock:
+            cur = self._conn.execute("SELECT status FROM jobs WHERE id = ?", (job_id,)).fetchone()
+            if not cur or cur[0] != STATUS_QUEUED:
+                return 0
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM jobs WHERE status = ? AND id <= ?",
+                (STATUS_QUEUED, job_id),
+            ).fetchone()
+            return row[0] if row else 0
+

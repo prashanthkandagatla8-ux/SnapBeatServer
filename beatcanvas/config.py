@@ -91,8 +91,8 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff", "
 #: tools/verify.py rather than assumed.
 POSITION_UNIT = "half_height"
 
-#: Maximum number of concurrent render jobs (used by health endpoint for load balancing).
-MAX_WORKERS = int(os.environ.get("BEATCANVAS_MAX_WORKERS", "4"))
+#: Maximum number of concurrent render jobs (defaults to 1 for serialized queue processing).
+MAX_WORKERS = int(os.environ.get("BEATCANVAS_MAX_WORKERS", "1"))
 
 #: Auto-cleanup: delete rendered videos older than this many seconds (default 1 hour).
 OUTPUT_MAX_AGE_SECONDS = int(os.environ.get("BEATCANVAS_OUTPUT_MAX_AGE", "3600"))
