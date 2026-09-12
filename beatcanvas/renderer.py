@@ -987,11 +987,65 @@ def _get_watermark_overlay(target_w: int, target_h: int) -> dict | None:
     return cached_val
 
 
+def _overlay_watermark_fallback(frame_bgr: np.ndarray, width: int, height: int) -> np.ndarray:
+    """Fallback procedural watermark badge if PNG asset fails to load."""
+    title_text = "SNAPBEAT"
+    sub_text = "Made with Free Version"
+
+    font_title = cv2.FONT_HERSHEY_DUPLEX
+    font_sub = cv2.FONT_HERSHEY_SIMPLEX
+
+    scale_title = max(0.85, width / 950.0)
+    scale_sub = scale_title * 0.60
+
+    thick_title = max(2, int(round(scale_title * 2.2)))
+    thick_sub = max(1, int(round(scale_sub * 1.8)))
+
+    (tw1, th1), _ = cv2.getTextSize(title_text, font_title, scale_title, thick_title)
+    (tw2, th2), _ = cv2.getTextSize(sub_text, font_sub, scale_sub, thick_sub)
+
+    tw = max(tw1, tw2)
+    spacing = int(8 * scale_title)
+    total_h = th1 + spacing + th2
+
+    margin_x = int(width * 0.045)
+    margin_y = int(height * 0.045)
+
+    pad_x = int(20 * scale_title)
+    pad_y = int(14 * scale_title)
+
+    box_w = tw + 2 * pad_x
+    box_h = total_h + 2 * pad_y
+
+    x2 = width - margin_x
+    x1 = max(0, x2 - box_w)
+    y2 = height - margin_y
+    y1 = max(0, y2 - box_h)
+
+    sub_img = frame_bgr[y1:y2, x1:x2]
+    if sub_img.shape[0] > 0 and sub_img.shape[1] > 0:
+        dark_card = np.full_like(sub_img, 16)
+        cv2.addWeighted(dark_card, 0.82, sub_img, 0.18, 0, sub_img)
+        cv2.rectangle(sub_img, (0, 0), (sub_img.shape[1] - 1, sub_img.shape[0] - 1), (77, 225, 255), 2, cv2.LINE_AA)
+        frame_bgr[y1:y2, x1:x2] = sub_img
+
+    tx1 = x1 + pad_x + (tw - tw1) // 2
+    ty1 = y1 + pad_y + th1
+    tx2 = x1 + pad_x + (tw - tw2) // 2
+    ty2 = ty1 + spacing + th2
+
+    cv2.putText(frame_bgr, title_text, (tx1 + 2, ty1 + 2), font_title, scale_title, (0, 0, 0), thick_title + 2, cv2.LINE_AA)
+    cv2.putText(frame_bgr, title_text, (tx1, ty1), font_title, scale_title, (77, 225, 255), thick_title, cv2.LINE_AA)
+    cv2.putText(frame_bgr, sub_text, (tx2 + 2, ty2 + 2), font_sub, scale_sub, (0, 0, 0), thick_sub + 2, cv2.LINE_AA)
+    cv2.putText(frame_bgr, sub_text, (tx2, ty2), font_sub, scale_sub, (245, 245, 250), thick_sub, cv2.LINE_AA)
+    return frame_bgr
+
+
 def _overlay_watermark(frame_bgr: np.ndarray, width: int, height: int) -> np.ndarray:
     """Overlay branded transparent PNG watermark badge in bottom-right corner."""
     overlay = _get_watermark_overlay(width, height)
     if overlay is None:
-        return frame_bgr
+        return _overlay_watermark_fallback(frame_bgr, width, height)
 
     x1, y1, x2, y2 = overlay["x1"], overlay["y1"], overlay["x2"], overlay["y2"]
     inv_alpha = overlay["inv_alpha"]
