@@ -719,6 +719,12 @@ def _parse_hex_color(c: str) -> tuple[int, int, int]:
 
 
 _FONT_CANDIDATES: dict[str, list[str]] = {
+    "great_vibes": ["GreatVibes-Regular.ttf", "GreatVibes.ttf", "georgia.ttf", "times.ttf"],
+    "allura": ["Allura-Regular.ttf", "Allura.ttf", "segoeui.ttf", "arial.ttf"],
+    "alex_brush": ["AlexBrush-Regular.ttf", "AlexBrush.ttf", "georgia.ttf", "times.ttf"],
+    "bodoni_moda": ["BodoniModa-Regular.ttf", "BodoniModa.ttf", "georgia.ttf", "times.ttf"],
+    "cormorant_garamond": ["CormorantGaramond-Regular.ttf", "CormorantGaramond.ttf", "times.ttf", "georgia.ttf"],
+    "cinzel": ["Cinzel-Regular.ttf", "Cinzel.ttf", "times.ttf", "georgia.ttf"],
     "impact": ["impact.ttf", "Impact", "arialbd.ttf", "Arial-Bold.ttf", "DejaVuSans-Bold.ttf", "arial.ttf"],
     "bold": ["impact.ttf", "Impact", "arialbd.ttf", "Arial-Bold.ttf", "DejaVuSans-Bold.ttf", "arial.ttf"],
     "serif": ["georgia.ttf", "Georgia", "times.ttf", "Times New Roman", "timesbd.ttf", "DejaVuSerif.ttf"],
@@ -729,8 +735,15 @@ _FONT_CANDIDATES: dict[str, list[str]] = {
 
 
 def _get_title_font(family: str, fontsize: int) -> ImageFont.ImageFont:
-    candidates = _FONT_CANDIDATES.get(family.lower(), _FONT_CANDIDATES["impact"])
+    base_assets = Path(__file__).resolve().parent.parent / "_assets" / "fonts"
+    candidates = _FONT_CANDIDATES.get(family.lower(), _FONT_CANDIDATES["great_vibes"])
     for name in candidates:
+        asset_path = base_assets / name
+        if asset_path.exists():
+            try:
+                return ImageFont.truetype(str(asset_path), fontsize)
+            except Exception:
+                pass
         try:
             return ImageFont.truetype(name, fontsize)
         except Exception:
@@ -1141,6 +1154,7 @@ def render(template: Template, photos: PhotoSet, output: str | Path,
     title_font = (options.get("title_font", "impact") if options else "impact").strip()
     title_style = (options.get("title_style", "classic") if options else "classic").strip()
     title_frame = (options.get("title_frame", "none") if options else "none").strip()
+    title_audio = (options.get("title_audio", "before_audio") if options else "before_audio").strip().lower()
 
     is_solid_title = bool(title_text and title_bg != "video")
     is_overlay_title = bool(title_text and title_bg == "video")
@@ -1151,7 +1165,7 @@ def render(template: Template, photos: PhotoSet, output: str | Path,
     total_frames = slide_frames + title_frames
 
     total_duration = template.duration + (title_frames / template.fps if is_solid_title else 0.0)
-    audio_delay = title_frames / template.fps if is_solid_title else 0.0
+    audio_delay = (title_frames / template.fps) if (is_solid_title and title_audio != "with_audio") else 0.0
 
     title_card_bgr = (
         _render_title_card_frame(
