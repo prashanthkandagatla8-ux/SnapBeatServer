@@ -992,10 +992,14 @@ def _get_watermark_overlay(target_w: int, target_h: int) -> dict | None:
 
     base_dir = Path(__file__).resolve().parent.parent
     possible_paths = [
+        base_dir / "_assets" / "snapbeat_logo_web.png",
+        base_dir / "_assets" / "snapbeat_logo_3d.png",
+        Path("/opt/snapbeat/server/_assets/snapbeat_logo_web.png"),
+        Path(r"C:\MyProjects\SnapBeatServer\_assets\snapbeat_logo_web.png"),
+        Path(r"C:\MyProjects\SnapBeat-Web\public\assets\images\snapbeat_logo_3d.png"),
         base_dir / "_assets" / "watermark.png",
         base_dir / "_assets" / "snap_beat_transparent.png",
         Path("/opt/snapbeat/server/_assets/watermark.png"),
-        Path("/opt/snapbeat/server/_assets/snap_beat_transparent.png"),
         Path(r"C:\MyProjects\SnapBeatServer\_assets\watermark.png"),
     ]
 
@@ -1014,9 +1018,9 @@ def _get_watermark_overlay(target_w: int, target_h: int) -> dict | None:
         _WATERMARK_CACHE[key] = None
         return None
 
-    # Calculate desired width: ~23% of canvas width, capped between 100px and 360px
-    wm_w = int(target_w * 0.23)
-    wm_w = max(100, min(wm_w, 360))
+    # Calculate desired width: ~26% of canvas width, capped between 100px and 380px
+    wm_w = int(target_w * 0.26)
+    wm_w = max(100, min(wm_w, 380))
     aspect = wm_img.shape[0] / float(wm_img.shape[1])
     wm_h = int(wm_w * aspect)
 
@@ -1025,10 +1029,11 @@ def _get_watermark_overlay(target_w: int, target_h: int) -> dict | None:
     margin_x = max(16, int(target_w * 0.04))
     margin_y = max(16, int(target_h * 0.04))
 
-    x2 = target_w - margin_x
-    x1 = max(0, x2 - wm_w)
-    y2 = target_h - margin_y
-    y1 = max(0, y2 - wm_h)
+    # Web version watermark: positioned in TOP-LEFT corner
+    x1 = margin_x
+    x2 = min(target_w, x1 + wm_w)
+    y1 = margin_y
+    y2 = min(target_h, y1 + wm_h)
 
     if target_w < 150 or target_h < 150 or x2 <= x1 or y2 <= y1:
         _WATERMARK_CACHE[key] = None
@@ -1081,10 +1086,10 @@ def _overlay_watermark_fallback(frame_bgr: np.ndarray, width: int, height: int) 
     box_w = tw + 2 * pad_x
     box_h = total_h + 2 * pad_y
 
-    x2 = width - margin_x
-    x1 = max(0, x2 - box_w)
-    y2 = height - margin_y
-    y1 = max(0, y2 - box_h)
+    x1 = margin_x
+    x2 = min(width, x1 + box_w)
+    y1 = margin_y
+    y2 = min(height, y1 + box_h)
 
     sub_img = frame_bgr[y1:y2, x1:x2]
     if sub_img.shape[0] > 0 and sub_img.shape[1] > 0:
@@ -1214,6 +1219,7 @@ def render(template: Template, photos: PhotoSet, output: str | Path,
 
     is_solid_title = bool(title_text and title_bg != "video")
     is_overlay_title = bool(title_text and title_bg == "video")
+    # Watermark applied for free users; removed when watermark=False for Pro users
     apply_watermark = bool(options.get("watermark", True)) if options else True
 
     slide_frames = max(1, int(round(template.duration * template.fps)))
