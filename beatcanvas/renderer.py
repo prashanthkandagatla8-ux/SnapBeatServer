@@ -984,24 +984,30 @@ def _overlay_title_on_frame(frame_bgr: np.ndarray, text: str, width: int, height
 _WATERMARK_CACHE: dict[tuple[int, int], dict | None] = {}
 
 
-def _get_watermark_overlay(target_w: int, target_h: int) -> dict | None:
-    """Precompute and cache scaled watermark and alpha masks for given resolution."""
-    key = (target_w, target_h)
+def _get_watermark_overlay(target_w: int, target_h: int, client: str = "mobile") -> dict | None:
+    """Precompute and cache scaled watermark and alpha masks for given resolution and client platform."""
+    client_type = (client or "mobile").lower().strip()
+    key = (target_w, target_h, client_type)
     if key in _WATERMARK_CACHE:
         return _WATERMARK_CACHE[key]
 
     base_dir = Path(__file__).resolve().parent.parent
-    possible_paths = [
-        base_dir / "_assets" / "snapbeat_logo_web.png",
-        base_dir / "_assets" / "snapbeat_logo_3d.png",
-        Path("/opt/snapbeat/server/_assets/snapbeat_logo_web.png"),
-        Path(r"C:\MyProjects\SnapBeatServer\_assets\snapbeat_logo_web.png"),
-        Path(r"C:\MyProjects\SnapBeat-Web\public\assets\images\snapbeat_logo_3d.png"),
-        base_dir / "_assets" / "watermark.png",
-        base_dir / "_assets" / "snap_beat_transparent.png",
-        Path("/opt/snapbeat/server/_assets/watermark.png"),
-        Path(r"C:\MyProjects\SnapBeatServer\_assets\watermark.png"),
-    ]
+    if client_type == "web":
+        possible_paths = [
+            base_dir / "_assets" / "snapbeat_logo_web.png",
+            base_dir / "_assets" / "snapbeat_logo_3d.png",
+            Path("/opt/snapbeat/server/_assets/snapbeat_logo_web.png"),
+            Path(r"C:\MyProjects\SnapBeatServer\_assets\snapbeat_logo_web.png"),
+            Path(r"C:\MyProjects\SnapBeat-Web\public\assets\images\snapbeat_logo_3d.png"),
+        ]
+    else:
+        # Default for mobile app: original bottom-right sticker watermark
+        possible_paths = [
+            base_dir / "_assets" / "watermark.png",
+            base_dir / "_assets" / "snap_beat_transparent.png",
+            Path("/opt/snapbeat/server/_assets/watermark.png"),
+            Path(r"C:\MyProjects\SnapBeatServer\_assets\watermark.png"),
+        ]
 
     wm_path = None
     for p in possible_paths:
@@ -1018,8 +1024,9 @@ def _get_watermark_overlay(target_w: int, target_h: int) -> dict | None:
         _WATERMARK_CACHE[key] = None
         return None
 
-    # Calculate desired width: ~26% of canvas width, capped between 100px and 380px
-    wm_w = int(target_w * 0.26)
+    # Calculate desired width: ~26% for web, ~23% for mobile
+    scale_factor = 0.26 if client_type == "web" else 0.23
+    wm_w = int(target_w * scale_factor)
     wm_w = max(100, min(wm_w, 380))
     aspect = wm_img.shape[0] / float(wm_img.shape[1])
     wm_h = int(wm_w * aspect)
@@ -1029,11 +1036,18 @@ def _get_watermark_overlay(target_w: int, target_h: int) -> dict | None:
     margin_x = max(16, int(target_w * 0.04))
     margin_y = max(16, int(target_h * 0.04))
 
-    # Web version watermark: positioned in TOP-LEFT corner
-    x1 = margin_x
-    x2 = min(target_w, x1 + wm_w)
-    y1 = margin_y
-    y2 = min(target_h, y1 + wm_h)
+    if client_type == "web":
+        # Web version watermark: positioned in TOP-LEFT corner
+        x1 = margin_x
+        x2 = min(target_w, x1 + wm_w)
+        y1 = margin_y
+        y2 = min(target_h, y1 + wm_h)
+    else:
+        # Mobile app watermark: preserved in original BOTTOM-RIGHT corner
+        x2 = target_w - margin_x
+        x1 = max(0, x2 - wm_w)
+        y2 = target_h - margin_y
+        y1 = max(0, y2 - wm_h)
 
     if target_w < 150 or target_h < 150 or x2 <= x1 or y2 <= y1:
         _WATERMARK_CACHE[key] = None
@@ -1056,7 +1070,7 @@ def _get_watermark_overlay(target_w: int, target_h: int) -> dict | None:
     return cached_val
 
 
-def _overlay_watermark_fallback(frame_bgr: np.ndarray, width: int, height: int) -> np.ndarray:
+def _overlay_watermark_fallback(frame_bgr: np.ndarray, width: int, height: int, client: str = "mobile") -> np.ndarray:
     """Fallback procedural watermark badge if PNG asset fails to load."""
     title_text = "SNAPBEAT"
     sub_text = "Made with Free Version"
@@ -1086,10 +1100,16 @@ def _overlay_watermark_fallback(frame_bgr: np.ndarray, width: int, height: int) 
     box_w = tw + 2 * pad_x
     box_h = total_h + 2 * pad_y
 
-    x1 = margin_x
-    x2 = min(width, x1 + box_w)
-    y1 = margin_y
-    y2 = min(height, y1 + box_h)
+    if client == "web":
+        x1 = margin_x
+        x2 = min(width, x1 + box_w)
+        y1 = margin_y
+        y2 = min(height, y1 + box_h)
+    else:
+        x2 = width - margin_x
+        x1 = max(0, x2 - box_w)
+        y2 = height - margin_y
+        y1 = max(0, y2 - box_h)
 
     sub_img = frame_bgr[y1:y2, x1:x2]
     if sub_img.shape[0] > 0 and sub_img.shape[1] > 0:
@@ -1110,13 +1130,13 @@ def _overlay_watermark_fallback(frame_bgr: np.ndarray, width: int, height: int) 
     return frame_bgr
 
 
-def _overlay_watermark(frame_bgr: np.ndarray, width: int, height: int) -> np.ndarray:
-    """Overlay branded transparent PNG watermark badge in bottom-right corner."""
+def _overlay_watermark(frame_bgr: np.ndarray, width: int, height: int, client: str = "mobile") -> np.ndarray:
+    """Overlay branded transparent PNG watermark badge (top-left for web, bottom-right for mobile)."""
     if width < 150 or height < 150:
         return frame_bgr
-    overlay = _get_watermark_overlay(width, height)
+    overlay = _get_watermark_overlay(width, height, client=client)
     if overlay is None:
-        return _overlay_watermark_fallback(frame_bgr, width, height)
+        return _overlay_watermark_fallback(frame_bgr, width, height, client=client)
 
     x1, y1, x2, y2 = overlay["x1"], overlay["y1"], overlay["x2"], overlay["y2"]
     inv_alpha = overlay["inv_alpha"]
@@ -1216,6 +1236,7 @@ def render(template: Template, photos: PhotoSet, output: str | Path,
     title_style = (options.get("title_style", "classic") if options else "classic").strip()
     title_frame = (options.get("title_frame", "none") if options else "none").strip()
     title_audio = (options.get("title_audio", "before_audio") if options else "before_audio").strip().lower()
+    client_platform = (options.get("client", "mobile") if options else "mobile").strip().lower()
 
     is_solid_title = bool(title_text and title_bg != "video")
     is_overlay_title = bool(title_text and title_bg == "video")
@@ -1272,7 +1293,7 @@ def render(template: Template, photos: PhotoSet, output: str | Path,
                     )
 
             if apply_watermark:
-                frame = _overlay_watermark(frame, width, height)
+                frame = _overlay_watermark(frame, width, height, client=client_platform)
 
             try:
                 encoder.stdin.write(frame.tobytes())

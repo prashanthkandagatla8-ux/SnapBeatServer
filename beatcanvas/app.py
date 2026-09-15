@@ -565,6 +565,7 @@ def render_mobile(
     auto_arrange: str = Form("auto"),
     watermark: str = Form("true"),
     render_type: str = Form("free_queue"),
+    client: str = Form("mobile"),
     cover_mode: str = Form(None)
 ):
     # Security check: If SNAPBEAT_INTERNAL_SECRET is configured, require authorization header
@@ -639,6 +640,7 @@ def render_mobile(
         "quality": (quality or "fast").lower().strip(),
         "watermark": (watermark or "true").lower() in ("true", "1", "yes"),
         "render_type": (render_type or "free_queue").lower().strip(),
+        "client": (client or "mobile").lower().strip(),
     }
 
     # Fix: Sanitize template name — strip .json suffix, block path traversal, support "auto"
