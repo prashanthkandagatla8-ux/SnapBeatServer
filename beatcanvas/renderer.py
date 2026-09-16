@@ -1000,8 +1000,15 @@ def _get_watermark_overlay(target_w: int, target_h: int, client: str = "mobile")
             Path(r"C:\MyProjects\SnapBeatServer\_assets\snapbeat_logo_web.png"),
             Path(r"C:\MyProjects\SnapBeat-Web\public\assets\images\snapbeat_logo_3d.png"),
         ]
+    elif client_type == "ios":
+        possible_paths = [
+            base_dir / "_assets" / "watermark_ios.png",
+            Path("/opt/snapbeat/server/_assets/watermark_ios.png"),
+            Path(r"C:\MyProjects\SnapBeatServer\_assets\watermark_ios.png"),
+            base_dir / "_assets" / "watermark.png",
+        ]
     else:
-        # Default for mobile app: original bottom-right sticker watermark
+        # Default for Android / mobile app: original bottom-right sticker watermark
         possible_paths = [
             base_dir / "_assets" / "watermark.png",
             base_dir / "_assets" / "snap_beat_transparent.png",
