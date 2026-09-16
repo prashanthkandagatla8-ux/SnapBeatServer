@@ -12,6 +12,7 @@ from __future__ import annotations
 import io
 import logging
 import os
+import shutil
 import subprocess
 import sys
 
@@ -756,41 +757,91 @@ def render_cleanup(job_id: int):
 
 @app.get("/api/health")
 def api_health():
-    """Report server health, capabilities, and current load for gateway routing."""
+    """Report server health, capabilities, disk space, and current load for gateway routing."""
     import time
     active = job_store.count_active()
+    disk_info = {}
+    try:
+        usage = shutil.disk_usage(config.OUTPUT_DIR)
+        disk_info = {
+            "total_gb": round(usage.total / (1024**3), 2),
+            "free_gb": round(usage.free / (1024**3), 2),
+            "used_gb": round(usage.used / (1024**3), 2),
+            "percent_free": round((usage.free / usage.total) * 100, 1),
+        }
+    except Exception:
+        pass
+
     return {
         "ok": True,
         "status": "ok",
         "active_jobs": active,
         "max_workers": config.MAX_WORKERS,
         "available": max(0, config.MAX_WORKERS - active),
+        "disk": disk_info,
         "ffmpeg": config.FFMPEG,
         "templates": len(list_templates()),
         "animations": list(animations.SELECTABLE),
         "music_modes": list(MUSIC_MODES),
         "worker_job": worker.current_job_id,
+        "output_retention_hours": round(config.OUTPUT_MAX_AGE_SECONDS / 3600, 1),
         "timestamp": time.time(),
     }
 
 
-# -- Auto-cleanup of old rendered videos ------------------------------------
+# -- Auto-cleanup of old rendered videos & disk space guard ------------------
 
 import threading
 import time as _time
 
 def _cleanup_old_outputs():
-    """Delete rendered MP4s older than OUTPUT_MAX_AGE_SECONDS to prevent disk fill."""
+    """Delete rendered MP4s older than OUTPUT_MAX_AGE_SECONDS (24h) and enforce disk space guard."""
     while True:
-        _time.sleep(1800)  # run every 30 minutes
         try:
+            # 1. Age-based cleanup: purge completed MP4s older than OUTPUT_MAX_AGE_SECONDS (default 24h)
             cutoff = _time.time() - config.OUTPUT_MAX_AGE_SECONDS
             for f in config.OUTPUT_DIR.glob("*.mp4"):
-                if f.stat().st_mtime < cutoff:
-                    f.unlink(missing_ok=True)
+                try:
+                    if f.stat().st_mtime < cutoff:
+                        f.unlink(missing_ok=True)
+                except Exception:
+                    pass
+
+            # 2. Disk space guard: if free space < MIN_FREE_DISK_BYTES (2GB), emergency purge oldest outputs
+            try:
+                usage = shutil.disk_usage(config.OUTPUT_DIR)
+                if usage.free < config.MIN_FREE_DISK_BYTES:
+                    mp4s = sorted(config.OUTPUT_DIR.glob("*.mp4"), key=lambda p: p.stat().st_mtime)
+                    for f in mp4s:
+                        try:
+                            f.unlink(missing_ok=True)
+                            if shutil.disk_usage(config.OUTPUT_DIR).free >= config.MIN_FREE_DISK_BYTES:
+                                break
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+            # 3. Orphaned temporary folder cleanup in _dropped (older than 2 hours)
+            try:
+                if config.DROPPED_DIR.exists():
+                    dropped_cutoff = _time.time() - 7200  # 2 hours
+                    for d in config.DROPPED_DIR.iterdir():
+                        if d.is_dir():
+                            try:
+                                if d.stat().st_mtime < dropped_cutoff:
+                                    shutil.rmtree(d, ignore_errors=True)
+                            except Exception:
+                                pass
+            except Exception:
+                pass
+
         except Exception:
             pass
 
+        _time.sleep(900)  # check every 15 minutes
+
 _cleanup_thread = threading.Thread(target=_cleanup_old_outputs, daemon=True)
 _cleanup_thread.start()
+
 

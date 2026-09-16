@@ -17,7 +17,9 @@ LOG_DIR = ROOT / "_logs"
 #: the original file is moved or renamed in the user's own music folder.
 TEMPLATE_MUSIC_DIR = TEMPLATE_DIR / "music"
 
-for _directory in (TEMPLATE_DIR, TEMPLATE_MUSIC_DIR, OUTPUT_DIR, CACHE_DIR, LOG_DIR):
+DROPPED_DIR = ROOT / "_dropped"
+
+for _directory in (TEMPLATE_DIR, TEMPLATE_MUSIC_DIR, OUTPUT_DIR, CACHE_DIR, LOG_DIR, DROPPED_DIR):
     _directory.mkdir(parents=True, exist_ok=True)
 
 # -- CapCut (Windows desktop only) -------------------------------------------
@@ -94,5 +96,9 @@ POSITION_UNIT = "half_height"
 #: Maximum number of concurrent render jobs (defaults to 1 for serialized queue processing).
 MAX_WORKERS = int(os.environ.get("BEATCANVAS_MAX_WORKERS", "1"))
 
-#: Auto-cleanup: delete rendered videos older than this many seconds (default 1 hour).
-OUTPUT_MAX_AGE_SECONDS = int(os.environ.get("BEATCANVAS_OUTPUT_MAX_AGE", "3600"))
+#: Auto-cleanup: delete rendered videos older than this many seconds (default 24 hours / 86400s).
+OUTPUT_MAX_AGE_SECONDS = int(os.environ.get("BEATCANVAS_OUTPUT_MAX_AGE", "86400"))
+
+#: Proactive disk safety guard: minimum free disk space required on host drive (default: 2 GB).
+MIN_FREE_DISK_BYTES = int(os.environ.get("BEATCANVAS_MIN_FREE_DISK_BYTES", str(2 * 1024 * 1024 * 1024)))
+
