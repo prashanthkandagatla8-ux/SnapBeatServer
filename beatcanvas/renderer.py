@@ -10,6 +10,7 @@ unless it is asked for.
 """
 from __future__ import annotations
 
+import functools
 import math
 import subprocess
 import sys
@@ -736,6 +737,7 @@ _FONT_CANDIDATES: dict[str, list[str]] = {
 }
 
 
+@functools.lru_cache(maxsize=128)
 def _get_title_font(family: str, fontsize: int) -> ImageFont.ImageFont:
     base_assets = Path(__file__).resolve().parent.parent / "_assets" / "fonts"
     candidates = _FONT_CANDIDATES.get(family.lower(), _FONT_CANDIDATES["great_vibes"])
@@ -760,28 +762,48 @@ def _get_title_font(family: str, fontsize: int) -> ImageFont.ImageFont:
 
 
 def _draw_title_artwork(img: Image.Image, text: str, width: int, height: int,
-                        font_family: str = "great_vibes", style: str = "classic",
-                        frame_style: str = "none", is_overlay: bool = False) -> None:
+                        font_family: str = "great_vibes", font_size: str = "large",
+                        style: str = "classic", frame_style: str = "none",
+                        is_overlay: bool = False) -> None:
     """Draw professionally styled title card or overlay onto PIL image."""
     draw = ImageDraw.Draw(img, "RGBA")
     style = (style or "classic").lower().strip()
     font_family = (font_family or "great_vibes").lower().strip()
     frame_style = (frame_style or "none").lower().strip()
+    size_key = (font_size or "large").lower().strip()
 
     formatted_text = text.upper() if style == "cinematic" else text
-    max_w = int(width * 0.76)
-    max_h = int(height * 0.60)
-    target_fs = max(32, width // 13)
+    max_w = int(width * 0.88)
+    max_h = int(height * (0.62 if is_overlay else 0.75))
+
+    # Font size multipliers relative to reference dimension:
+    # small:  ~88px on 1080p (subtle caption)
+    # medium: ~115px on 1080p (balanced title)
+    # large:  ~155px on 1080p (bold cinematic - DEFAULT)
+    # xlarge: ~209px on 1080p (massive headline impact)
+    scale_multipliers = {
+        "small": 0.65,
+        "medium": 0.85,
+        "large": 1.15,
+        "xlarge": 1.55,
+        "xl": 1.55,
+    }
+    multiplier = scale_multipliers.get(size_key, 1.15)
+    dim_ref = min(width, int(height * 0.9)) if width <= height else min(int(width * 0.7), height)
+    target_fs = max(36, int(round((dim_ref / 8.0) * multiplier)))
 
     chosen_lines = [formatted_text]
     chosen_font = _get_title_font(font_family, target_fs)
-    chosen_lh = int(target_fs * 1.35)
+    chosen_lh = int(target_fs * 1.30)
 
     smallest_font = chosen_font
     smallest_lines = chosen_lines
     smallest_lh = chosen_lh
 
-    for fs in range(target_fs, 23, -1):
+    min_fs = max(24, int(target_fs * 0.35))
+    step = 2 if target_fs > 60 else 1
+
+    for fs in range(target_fs, min_fs - 1, -step):
         font = _get_title_font(font_family, fs)
         smallest_font = font
         words = formatted_text.split()
@@ -807,7 +829,7 @@ def _draw_title_artwork(img: Image.Image, text: str, width: int, height: int,
         if curr:
             lines.append(" ".join(curr))
 
-        lh = int(fs * 1.35)
+        lh = int(fs * 1.30)
         total_h = len(lines) * lh
         smallest_lines = lines
         smallest_lh = lh
@@ -962,22 +984,22 @@ def _draw_title_artwork(img: Image.Image, text: str, width: int, height: int,
 
 
 def _render_title_card_frame(width: int, height: int, text: str, bg_rgb: tuple[int, int, int],
-                             font_family: str = "great_vibes", style: str = "classic",
-                             frame_style: str = "none") -> np.ndarray:
+                             font_family: str = "great_vibes", font_size: str = "large",
+                             style: str = "classic", frame_style: str = "none") -> np.ndarray:
     """Render a solid color title card with styled text and frame (returns BGR uint8 ndarray)."""
     img = Image.new("RGBA", (width, height), color=(*bg_rgb, 255))
-    _draw_title_artwork(img, text, width, height, font_family=font_family, style=style,
-                        frame_style=frame_style, is_overlay=False)
+    _draw_title_artwork(img, text, width, height, font_family=font_family, font_size=font_size,
+                        style=style, frame_style=frame_style, is_overlay=False)
     return np.array(img.convert("RGB"))[:, :, ::-1]
 
 
 def _overlay_title_on_frame(frame_bgr: np.ndarray, text: str, width: int, height: int,
-                            font_family: str = "great_vibes", style: str = "classic",
-                            frame_style: str = "none") -> np.ndarray:
+                            font_family: str = "great_vibes", font_size: str = "large",
+                            style: str = "classic", frame_style: str = "none") -> np.ndarray:
     """Overlay styled title text and frame on a BGR video frame."""
     img = Image.fromarray(frame_bgr[:, :, ::-1]).convert("RGBA")
-    _draw_title_artwork(img, text, width, height, font_family=font_family, style=style,
-                        frame_style=frame_style, is_overlay=True)
+    _draw_title_artwork(img, text, width, height, font_family=font_family, font_size=font_size,
+                        style=style, frame_style=frame_style, is_overlay=True)
     return np.array(img.convert("RGB"))[:, :, ::-1]
 
 
@@ -1240,6 +1262,7 @@ def render(template: Template, photos: PhotoSet, output: str | Path,
     title_bg = (options.get("title_bg", "black") if options else "black").strip()
     title_duration = float(options.get("title_duration", 2)) if options else 2.0
     title_font = (options.get("title_font", "great_vibes") if options else "great_vibes").strip()
+    title_font_size = (options.get("title_font_size", "large") if options else "large").strip().lower()
     title_style = (options.get("title_style", "classic") if options else "classic").strip()
     title_frame = (options.get("title_frame", "none") if options else "none").strip()
     title_audio = (options.get("title_audio", "before_audio") if options else "before_audio").strip().lower()
@@ -1263,7 +1286,8 @@ def render(template: Template, photos: PhotoSet, output: str | Path,
     title_card_bgr = (
         _render_title_card_frame(
             width, height, title_text, _parse_hex_color(title_bg),
-            font_family=title_font, style=title_style, frame_style=title_frame
+            font_family=title_font, font_size=title_font_size,
+            style=title_style, frame_style=title_frame
         )
         if is_solid_title else None
     )
@@ -1296,7 +1320,8 @@ def render(template: Template, photos: PhotoSet, output: str | Path,
                 if is_overlay_title and slide_time_s < title_duration:
                     frame = _overlay_title_on_frame(
                         frame, title_text, width, height,
-                        font_family=title_font, style=title_style, frame_style=title_frame
+                        font_family=title_font, font_size=title_font_size,
+                        style=title_style, frame_style=title_frame
                     )
 
             if apply_watermark:
